@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+facultylink.db
+.env
+.venv/
+venv/

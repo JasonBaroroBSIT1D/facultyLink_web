@@ -1,0 +1,117 @@
+{% extends "base_dashboard.html" %}
+{% block title %}FacultyLink — Admin Dashboard{% endblock %}
+
+{% set active_page = 'overview' %}
+{% block sidebar_nav %}
+{% include "admin/_nav.html" %}
+{% endblock %}
+
+{% block content %}
+<h1 class="page-title">FacultyLink Academic Archive</h1>
+<p class="page-subtitle">Administrative overview — DBM-CHED validated faculty evaluation system</p>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">Total Faculty</div>
+    <div class="value">{{ stats.faculty }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Total Reviewers</div>
+    <div class="value">{{ stats.reviewers }}</div>
+    <span class="badge badge-stable">STABLE</span>
+  </div>
+  <div class="stat-card">
+    <div class="label">Total Documents</div>
+    <div class="value">{{ stats.documents }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Pending Validations</div>
+    <div class="value">{{ stats.pending }}</div>
+    <span class="badge badge-pending">pending</span>
+    <span class="badge badge-urgent">URGENT</span>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3>Submission Trends</h3>
+        <p>Document throughput over the current semester</p>
+      </div>
+      <div class="chart-toggle">
+        <button class="active">6 Months</button>
+        <button>Yearly</button>
+      </div>
+    </div>
+    <div class="chart-container">
+      <canvas id="submissionChart"></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <h3>Notifications</h3>
+    </div>
+    <ul class="notif-list">
+      {% for n in notifications %}
+      <li>
+        <span class="notif-dot {{ n.type }}"></span>
+        <div>
+          <strong>{{ n.title }}</strong>
+          <span class="time">{{ n.created_at }}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    <a href="{{ url_for('admin_notifications') }}" style="font-size:0.8rem;margin-top:0.5rem;display:inline-block;">View All Notifications →</a>
+  </div>
+</div>
+
+<div class="bottom-grid">
+  <div class="card">
+    <div class="card-header"><h3>KRA Distribution</h3></div>
+    {% set kra_pcts = {'Instruction': 78, 'Research': 85, 'Extension': 62, 'Prof Dev': 71} %}
+    {% for k in kra %}
+    <div class="kra-bar">
+      <div class="kra-label">
+        <span>{{ k.kra_name }}</span>
+        <span>{{ kra_pcts.get(k.kra_name, 70) }}%</span>
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill" style="width: {{ kra_pcts.get(k.kra_name, 70) }}%"></div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>Rank Simulation</h3></div>
+    <p style="font-size:0.85rem;color:var(--text-muted);">Promotable Pool</p>
+    <div class="value" style="font-size:2rem;font-weight:700;color:var(--navy);">82</div>
+    <p style="font-size:0.75rem;color:var(--text-light);margin-bottom:0.5rem;">candidates</p>
+    <div class="rank-cards">
+      <div class="rank-mini green">
+        <span>Instructor → Asst Prof</span>
+        <span class="num">45</span>
+      </div>
+      <div class="rank-mini orange">
+        <span>Asst → Assoc Prof</span>
+        <span class="num">28</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>Recent Activity</h3></div>
+    <ul class="activity-feed">
+      {% for a in activity %}
+      <li>
+        <strong>{{ a.action }}</strong>
+        <span class="time">{{ a.created_at }} — {{ a.details or '' }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

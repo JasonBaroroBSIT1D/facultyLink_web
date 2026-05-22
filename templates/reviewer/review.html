@@ -1,0 +1,65 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Review Submission — FacultyLink{% endblock %}
+{% set active_page = 'submissions' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<h1 class="page-title">Faculty Submission Review</h1>
+<p class="page-subtitle">{{ submission.faculty_name }} — {{ submission.document_title }}</p>
+
+<div class="review-layout">
+  <div class="card">
+    <div class="card-header">
+      <h3>Document Preview</h3>
+      <span>{{ status_badge(submission.status) }}</span>
+    </div>
+    <div class="doc-preview">{{ submission.ocr_text or 'No document text available.' }}</div>
+    <p style="margin-top:1rem;font-size:0.85rem;">
+      <strong>KRA:</strong> {{ submission.kra_type }} &nbsp;|&nbsp;
+      <strong>Compliance:</strong> {{ submission.compliance_status|replace('_',' ')|title }}
+    </p>
+    <a href="{{ url_for('reviewer_ocr', sub_id=submission.id) }}" class="btn btn-secondary" style="margin-top:0.75rem;">Open OCR Validation Dashboard →</a>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>Validation & Workflow</h3></div>
+
+    <div class="validation-grid">
+      <div class="val-indicator {% if submission.ocr_confidence >= 80 %}pass{% elif submission.ocr_confidence >= 60 %}warn{% else %}fail{% endif %}">
+        <div class="pct">{{ '%.0f'|format(submission.ocr_confidence) }}%</div>
+        <div class="lbl">OCR Confidence</div>
+      </div>
+      <div class="val-indicator {% if submission.compliance_status == 'compliant' %}pass{% else %}warn{% endif %}">
+        <div class="pct">DBM</div>
+        <div class="lbl">CHED Compliance</div>
+      </div>
+      <div class="val-indicator pass">
+        <div class="pct">{{ submission.kra_type[:4] }}</div>
+        <div class="lbl">KRA Class</div>
+      </div>
+    </div>
+
+    <form method="POST" class="form-panel">
+      <div class="form-group">
+        <label>Compliance Status</label>
+        <select name="compliance_status">
+          <option value="compliant" {% if submission.compliance_status=='compliant' %}selected{% endif %}>Compliant</option>
+          <option value="non_compliant" {% if submission.compliance_status=='non_compliant' %}selected{% endif %}>Non-Compliant</option>
+          <option value="under_review" {% if submission.compliance_status=='under_review' %}selected{% endif %}>Under Review</option>
+          <option value="pending" {% if submission.compliance_status=='pending' %}selected{% endif %}>Pending</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Reviewer Comments & Feedback</label>
+        <textarea name="comments" placeholder="Enter validation notes, missing fields, or feedback for faculty...">{{ submission.reviewer_comments or '' }}</textarea>
+      </div>
+      <div class="action-bar">
+        <button type="submit" name="action" value="approve" class="btn btn-success">Approve Submission</button>
+        <button type="submit" name="action" value="reject" class="btn btn-danger">Reject Submission</button>
+        <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-secondary">Cancel</a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,73 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Reviewer Dashboard — FacultyLink{% endblock %}
+{% set active_page = 'overview' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<h1 class="page-title">Reviewer Dashboard</h1>
+<p class="page-subtitle">Faculty submission review, document validation, and feedback workflow</p>
+
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="label">Assigned Submissions</div>
+    <div class="value">{{ stats.assigned }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Pending Review</div>
+    <div class="value">{{ stats.pending }}</div>
+    <span class="badge badge-urgent">ACTION NEEDED</span>
+  </div>
+  <div class="stat-card">
+    <div class="label">Approved</div>
+    <div class="value">{{ stats.approved }}</div>
+    <span class="badge badge-stable">COMPLETE</span>
+  </div>
+  <div class="stat-card">
+    <div class="label">Rejected</div>
+    <div class="value">{{ stats.rejected }}</div>
+  </div>
+</div>
+
+<div class="dashboard-grid">
+  <div class="card">
+    <div class="card-header">
+      <h3>Pending Faculty Submissions</h3>
+      <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-sm btn-secondary">View All</a>
+    </div>
+    <table class="data-table">
+      <thead><tr><th>Faculty</th><th>Document</th><th>KRA</th><th>OCR</th><th>Action</th></tr></thead>
+      <tbody>
+        {% for s in pending %}
+        <tr>
+          <td>{{ s.faculty_name }}</td>
+          <td>{{ s.document_title }}</td>
+          <td>{{ s.kra_type }}</td>
+          <td>{{ '%.1f'|format(s.ocr_confidence) }}%</td>
+          <td>
+            <a href="{{ url_for('reviewer_review', sub_id=s.id) }}" class="btn btn-sm btn-primary">Review</a>
+            <a href="{{ url_for('reviewer_ocr', sub_id=s.id) }}" class="btn btn-sm btn-secondary">OCR</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><h3>Notifications</h3></div>
+    <ul class="notif-list">
+      {% for n in notifications %}
+      <li>
+        <span class="notif-dot {{ n.type }}"></span>
+        <div>
+          <strong>{{ n.title }}</strong>
+          <p style="font-size:0.8rem;color:var(--text-muted);">{{ n.message }}</p>
+          <span class="time">{{ n.created_at }}</span>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

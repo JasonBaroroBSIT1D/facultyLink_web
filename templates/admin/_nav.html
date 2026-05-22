@@ -1,0 +1,32 @@
+<a href="{{ url_for('admin_dashboard') }}" class="nav-item {% if active_page == 'overview' %}active{% endif %}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+  Overview
+</a>
+<a href="{{ url_for('admin_users') }}" class="nav-item {% if active_page == 'users' %}active{% endif %}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+  User Management
+</a>
+<a href="{{ url_for('admin_reviewer_assignment') }}" class="nav-item {% if active_page == 'assignment' %}active{% endif %}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+  Reviewer Assignment
+</a>
+<a href="{{ url_for('admin_kra_config') }}" class="nav-item {% if active_page == 'kra' %}active{% endif %}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/></svg>
+  KRA Configuration
+</a>
+<a href="{{ url_for('admin_submissions') }}" class="nav-item {% if active_page == 'submissions' %}active{% endif %}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+  Document Monitoring
+</a>
+<a href="{{ url_for('admin_analytics') }}" class="nav-item {% if active_page == 'analytics' %}active{% endif %}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+  Analytics
+</a>
+<a href="{{ url_for('admin_notifications') }}" class="nav-item {% if active_page == 'notifications' %}active{% endif %}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/></svg>
+  Notifications
+</a>
+<a href="{{ url_for('admin_audit') }}" class="nav-item {% if active_page == 'audit' %}active{% endif %}">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+  Audit Logs
+</a>

@@ -1,0 +1,48 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Reviewer Assignment — FacultyLink{% endblock %}
+{% block sidebar_nav %}{% include "admin/_nav.html" %}{% endblock %}
+{% set active_page = 'assignment' %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<h1 class="page-title">Reviewer Assignment</h1>
+<p class="page-subtitle">Assign reviewers to faculty submissions for validation workflow</p>
+
+<div class="card">
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Faculty</th>
+          <th>Document</th>
+          <th>Status</th>
+          <th>Current Reviewer</th>
+          <th>Assign</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in submissions %}
+        <tr>
+          <td>{{ s.faculty_name }}</td>
+          <td>{{ s.document_title }}</td>
+          <td>{{ status_badge(s.status) }}</td>
+          <td>{{ s.reviewer_name or '—' }}</td>
+          <td>
+            <form method="POST" style="display:flex;gap:0.5rem;">
+              <input type="hidden" name="submission_id" value="{{ s.id }}">
+              <select name="reviewer_id" required>
+                <option value="">Select reviewer</option>
+                {% for r in reviewers %}
+                <option value="{{ r.id }}" {% if s.reviewer_id == r.id %}selected{% endif %}>{{ r.full_name }}</option>
+                {% endfor %}
+              </select>
+              <button type="submit" class="btn btn-sm btn-primary">Assign</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

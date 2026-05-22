@@ -1,0 +1,44 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Notification Management — FacultyLink{% endblock %}
+{% block sidebar_nav %}{% include "admin/_nav.html" %}{% endblock %}
+{% set active_page = 'notifications' %}
+
+{% block content %}
+<h1 class="page-title">Notification Management</h1>
+<p class="page-subtitle">Submission alerts, validation updates, and system announcements</p>
+
+<div class="card" style="margin-bottom:1.5rem;">
+  <div class="card-header"><h3>Publish System Announcement</h3></div>
+  <form method="POST" class="form-panel">
+    <div class="form-group">
+      <label>Title</label>
+      <input type="text" name="title" required placeholder="System announcement title">
+    </div>
+    <div class="form-group">
+      <label>Message</label>
+      <textarea name="message" placeholder="Announcement details..."></textarea>
+    </div>
+    <div class="form-group">
+      <label>Type</label>
+      <select name="type">
+        <option value="info">Info</option>
+        <option value="warning">Warning</option>
+        <option value="urgent">Urgent</option>
+        <option value="success">Success</option>
+      </select>
+    </div>
+    <button type="submit" class="btn btn-primary">Publish</button>
+  </form>
+</div>
+
+<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;">
+  {% for n in notifications %}
+  <div class="card">
+    <span class="notif-dot {{ n.type }}" style="display:inline-block;margin-bottom:0.5rem;"></span>
+    <h3 style="font-size:0.95rem;margin-bottom:0.35rem;">{{ n.title }}</h3>
+    <p style="font-size:0.85rem;color:var(--text-muted);">{{ n.message }}</p>
+    <span class="time" style="font-size:0.7rem;color:var(--text-light);">{{ n.created_at }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

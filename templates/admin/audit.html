@@ -1,0 +1,29 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Audit Logs — FacultyLink{% endblock %}
+{% block sidebar_nav %}{% include "admin/_nav.html" %}{% endblock %}
+{% set active_page = 'audit' %}
+
+{% block content %}
+<h1 class="page-title">Audit Logs</h1>
+<p class="page-subtitle">System activity trail for security and compliance review</p>
+
+<div class="card">
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr><th>Timestamp</th><th>User</th><th>Action</th><th>Details</th></tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>{{ log.created_at }}</td>
+          <td>{{ log.full_name or 'System' }}<br><small>{{ log.email or '' }}</small></td>
+          <td><strong>{{ log.action }}</strong></td>
+          <td>{{ log.details }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

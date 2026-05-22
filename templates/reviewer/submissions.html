@@ -1,0 +1,52 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Submissions — FacultyLink{% endblock %}
+{% set active_page = 'submissions' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<h1 class="page-title">Faculty Submission Review</h1>
+<p class="page-subtitle">Open submissions, preview documents, and manage validation workflow</p>
+
+<form class="filters-bar" method="GET">
+  <select name="status">
+    <option value="">All Status</option>
+    <option value="pending" {% if request.args.get('status')=='pending' %}selected{% endif %}>Pending</option>
+    <option value="approved" {% if request.args.get('status')=='approved' %}selected{% endif %}>Approved</option>
+    <option value="rejected" {% if request.args.get('status')=='rejected' %}selected{% endif %}>Rejected</option>
+  </select>
+  <button type="submit" class="btn btn-primary">Filter</button>
+</form>
+
+<div class="card">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Faculty</th>
+        <th>Document</th>
+        <th>KRA</th>
+        <th>Status</th>
+        <th>Compliance</th>
+        <th>Confidence</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in submissions %}
+      <tr>
+        <td><strong>{{ s.faculty_name }}</strong></td>
+        <td>{{ s.document_title }}</td>
+        <td>{{ s.kra_type }}</td>
+        <td>{{ status_badge(s.status) }}</td>
+        <td>{{ status_badge(s.compliance_status) }}</td>
+        <td>{{ '%.1f'|format(s.ocr_confidence) }}%</td>
+        <td>
+          <a href="{{ url_for('reviewer_review', sub_id=s.id) }}" class="btn btn-sm btn-primary">Review</a>
+          <a href="{{ url_for('reviewer_ocr', sub_id=s.id) }}" class="btn btn-sm btn-secondary">OCR</a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

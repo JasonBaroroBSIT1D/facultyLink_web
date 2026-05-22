@@ -1,0 +1,61 @@
+{% extends "base_dashboard.html" %}
+{% block title %}OCR Validation — FacultyLink{% endblock %}
+{% set active_page = 'validation' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<h1 class="page-title">OCR Processing & Validation</h1>
+<p class="page-subtitle">{{ submission.document_title }} — {{ submission.faculty_name }}</p>
+
+<div class="review-layout">
+  <div class="card">
+    <div class="card-header"><h3>Uploaded Document Preview</h3></div>
+    <div class="doc-preview" style="min-height:320px;">{{ submission.ocr_text }}</div>
+  </div>
+
+  <div>
+    <div class="card" style="margin-bottom:1rem;">
+      <div class="card-header"><h3>OCR Extracted Text</h3></div>
+      <div class="doc-preview" style="min-height:160px;font-size:0.75rem;">{{ submission.ocr_text }}</div>
+    </div>
+
+    <div class="validation-grid">
+      <div class="val-indicator {% if submission.ocr_confidence >= 80 %}pass{% elif submission.ocr_confidence >= 60 %}warn{% else %}fail{% endif %}">
+        <div class="confidence-ring">{{ '%.0f'|format(submission.ocr_confidence) }}%</div>
+        <div class="lbl">Validation Confidence</div>
+      </div>
+      <div class="val-indicator {% if submission.compliance_status == 'compliant' %}pass{% else %}fail{% endif %}">
+        <div class="pct" style="font-size:1rem;">{{ submission.compliance_status|replace('_',' ')|upper }}</div>
+        <div class="lbl">Compliance Status</div>
+      </div>
+      <div class="val-indicator pass">
+        <div class="pct" style="font-size:1rem;">{{ submission.kra_type }}</div>
+        <div class="lbl">KRA Classification</div>
+      </div>
+      <div class="val-indicator {% if duplicate_detected %}fail{% else %}pass{% endif %}">
+        <div class="pct" style="font-size:1rem;">{% if duplicate_detected %}YES{% else %}NO{% endif %}</div>
+        <div class="lbl">Duplicate File</div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:1rem;">
+      <div class="card-header"><h3>Missing Field Detection</h3></div>
+      {% if missing_fields %}
+      <ul class="missing-list">
+        {% for field in missing_fields %}
+        <li>⚠ {{ field }}</li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <p style="color:var(--success);font-size:0.9rem;">✓ All required fields detected</p>
+      {% endif %}
+    </div>
+
+    <div class="action-bar">
+      <a href="{{ url_for('reviewer_review', sub_id=submission.id) }}" class="btn btn-primary">Proceed to Review</a>
+      <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-secondary">Back to List</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
