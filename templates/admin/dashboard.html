@@ -71,18 +71,18 @@
 <div class="bottom-grid">
   <div class="card">
     <div class="card-header"><h3>KRA Distribution</h3></div>
-    {% set kra_pcts = {'Instruction': 78, 'Research': 85, 'Extension': 62, 'Prof Dev': 71} %}
-    {% for k in kra %}
+    {% for item in kra_scores.kra_items %}
     <div class="kra-bar">
       <div class="kra-label">
-        <span>{{ k.kra_name }}</span>
-        <span>{{ kra_pcts.get(k.kra_name, 70) }}%</span>
+        <span>{{ item.kra_name }}</span>
+        <span>{{ item.raw_score }}% <small>({{ item.weight }}% weight)</small></span>
       </div>
       <div class="bar-track">
-        <div class="bar-fill" style="width: {{ kra_pcts.get(k.kra_name, 70) }}%"></div>
+        <div class="bar-fill {% if not item.passed %}bar-fill--warn{% endif %}" style="width: {{ item.raw_score }}%"></div>
       </div>
     </div>
     {% endfor %}
+    <p class="kra-bar-footer">Computed total: <strong>{{ kra_scores.total_score }}%</strong></p>
   </div>
 
   <div class="card">

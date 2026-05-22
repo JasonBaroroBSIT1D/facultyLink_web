@@ -25,6 +25,25 @@
   <div class="card">
     <div class="card-header"><h3>Validation & Workflow</h3></div>
 
+    <div class="kra-review-panel">
+      <h4>Automated KRA Score (NBC 461)</h4>
+      {% if submission_kra %}
+      <p class="kra-review-panel__score">
+        <strong>{{ submission_kra.kra_name }}:</strong>
+        {{ submission_kra.raw_score }}% accomplishment
+        <span class="text-muted">(min {{ submission_kra.min_score }}% · weight {{ submission_kra.weight }}%)</span>
+      </p>
+      {% endif %}
+      <p class="kra-review-panel__total">Weighted total score: <strong>{{ kra_eval.total_score }}%</strong></p>
+      <div class="qualification-banner {% if qualification.simulated_qualified %}qualification-banner--pass{% else %}qualification-banner--fail{% endif %}">
+        <strong>{% if qualification.simulated_qualified %}Meets configured KRA thresholds{% else %}Below qualification thresholds{% endif %}</strong>
+        <ul>{% for note in qualification.notes %}<li>{{ note }}</li>{% endfor %}</ul>
+      </div>
+      {% if settings.get('reviewer_validation_required', '1') == '1' %}
+      <p class="form-hint">Reviewer validation required before final reclassification approval.</p>
+      {% endif %}
+    </div>
+
     <div class="validation-grid">
       <div class="val-indicator {% if submission.ocr_confidence >= 80 %}pass{% elif submission.ocr_confidence >= 60 %}warn{% else %}fail{% endif %}">
         <div class="pct">{{ '%.0f'|format(submission.ocr_confidence) }}%</div>

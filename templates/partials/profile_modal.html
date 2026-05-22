@@ -1,0 +1,94 @@
+{% set initials = (g.user.full_name or 'U')[:1] %}
+<div id="profile-modal" class="modal" aria-hidden="true" role="dialog" aria-labelledby="profile-modal-title">
+  <div class="modal__backdrop" data-close-modal></div>
+  <div class="modal__dialog profile-modal">
+    <button type="button" class="modal__close" data-close-modal aria-label="Close profile">&times;</button>
+
+    <div id="profile-view" class="profile-panel">
+      <div class="profile-modal__header">
+        <div class="profile-avatar" aria-hidden="true">{{ initials }}</div>
+        <div>
+          <h2 id="profile-modal-title" class="profile-modal__name">{{ g.user.full_name }}</h2>
+          <p class="profile-modal__role">{{ role_labels.get(g.user.role, g.user.role|title) }}</p>
+        </div>
+      </div>
+
+      <div class="profile-details">
+        <div class="profile-detail">
+          <span class="profile-detail__label">Email Address</span>
+          <span class="profile-detail__value">{{ g.user.email }}</span>
+        </div>
+        <div class="profile-detail">
+          <span class="profile-detail__label">Role</span>
+          <span class="profile-detail__value">
+            <span class="role-badge role-badge--{{ g.user.role }}">{{ role_labels.get(g.user.role, g.user.role|title) }}</span>
+          </span>
+        </div>
+        <div class="profile-detail">
+          <span class="profile-detail__label">Account Status</span>
+          <span class="profile-detail__value">
+            {% if g.user.active %}
+            <span class="status-tag status-approved">Active</span>
+            {% else %}
+            <span class="status-tag status-rejected">Inactive</span>
+            {% endif %}
+          </span>
+        </div>
+        {% if g.user.created_at %}
+        <div class="profile-detail">
+          <span class="profile-detail__label">Date Created</span>
+          <span class="profile-detail__value">{{ g.user.created_at[:10] }}</span>
+        </div>
+        {% endif %}
+      </div>
+
+      <div class="profile-modal__actions">
+        <button type="button" class="btn btn-primary" data-show-panel="edit-profile">Edit Profile</button>
+        <button type="button" class="btn btn-secondary" data-show-panel="change-password">Change Password</button>
+      </div>
+    </div>
+
+    <div id="edit-profile" class="profile-panel" hidden>
+      <h3 class="profile-panel__title">Edit Profile</h3>
+      <form method="POST" action="{{ url_for('profile') }}" class="form-panel">
+        <input type="hidden" name="action" value="update_profile">
+        <div class="form-group">
+          <label for="profile_full_name">Full Name</label>
+          <input type="text" id="profile_full_name" name="full_name" value="{{ g.user.full_name }}" required>
+        </div>
+        <div class="form-group">
+          <label>Email Address</label>
+          <input type="email" value="{{ g.user.email }}" disabled>
+          <p class="form-hint">Email cannot be changed here. Contact your institution admin.</p>
+        </div>
+        <div class="profile-modal__actions">
+          <button type="button" class="btn btn-secondary" data-show-panel="profile-view">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="change-password" class="profile-panel" hidden>
+      <h3 class="profile-panel__title">Change Password</h3>
+      <form method="POST" action="{{ url_for('profile') }}" class="form-panel">
+        <input type="hidden" name="action" value="change_password">
+        <div class="form-group">
+          <label for="current_password">Current Password</label>
+          <input type="password" id="current_password" name="current_password" required autocomplete="current-password">
+        </div>
+        <div class="form-group">
+          <label for="new_password">New Password</label>
+          <input type="password" id="new_password" name="new_password" required minlength="6" autocomplete="new-password">
+        </div>
+        <div class="form-group">
+          <label for="confirm_password">Confirm New Password</label>
+          <input type="password" id="confirm_password" name="confirm_password" required minlength="6" autocomplete="new-password">
+        </div>
+        <div class="profile-modal__actions">
+          <button type="button" class="btn btn-secondary" data-show-panel="profile-view">Cancel</button>
+          <button type="submit" class="btn btn-primary">Update Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>

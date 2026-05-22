@@ -51,7 +51,7 @@
       </div>
     </aside>
 
-    <main class="login-portal">
+    <main class="login-portal login-portal--signin">
       <div class="login-portal__card">
         <div class="login-portal__brand">
           {{ logo_svg() }}
@@ -105,14 +105,15 @@
           </form>
         </div>
 
-        <div class="login-portal__links">
-          <a href="#">Help</a>
-          <a href="#">Support</a>
-        </div>
-
-        <div class="login-portal__badges">
-          <span class="login-badge login-badge--secure">✓ Secure</span>
-          <span class="login-badge login-badge--private">🔒 Private</span>
+        <div class="login-portal__meta">
+          <div class="login-portal__links">
+            <a href="#">Help</a>
+            <a href="#">Support</a>
+          </div>
+          <div class="login-portal__badges">
+            <span class="login-badge login-badge--secure">✓ Secure</span>
+            <span class="login-badge login-badge--private">🔒 Private</span>
+          </div>
         </div>
 
         <p class="login-portal__footer">

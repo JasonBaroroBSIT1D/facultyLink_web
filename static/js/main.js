@@ -3,6 +3,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSidebar();
   initCharts();
   initChartToggle();
+  initProfileModal();
 });
 
 function initPasswordToggle() {
@@ -56,6 +57,50 @@ function initCharts() {
         },
       });
     });
+}
+
+function initProfileModal() {
+  const modal = document.getElementById('profile-modal');
+  if (!modal) return;
+
+  const openers = document.querySelectorAll('[data-open-profile]');
+  const closers = modal.querySelectorAll('[data-close-modal]');
+  const panels = modal.querySelectorAll('.profile-panel');
+  const panelTriggers = modal.querySelectorAll('[data-show-panel]');
+
+  const showPanel = (panelId) => {
+    panels.forEach((panel) => {
+      panel.hidden = panel.id !== panelId;
+    });
+  };
+
+  const openModal = () => {
+    showPanel('profile-view');
+    modal.classList.add('is-open');
+    modal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+  };
+
+  const closeModal = () => {
+    modal.classList.remove('is-open');
+    modal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+    showPanel('profile-view');
+  };
+
+  openers.forEach((el) => el.addEventListener('click', openModal));
+  closers.forEach((el) => el.addEventListener('click', closeModal));
+
+  panelTriggers.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const target = btn.getAttribute('data-show-panel');
+      if (target) showPanel(target);
+    });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && modal.classList.contains('is-open')) closeModal();
+  });
 }
 
 function initChartToggle() {

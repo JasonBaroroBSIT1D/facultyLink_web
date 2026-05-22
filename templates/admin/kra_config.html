@@ -1,56 +1,238 @@
 {% extends "base_dashboard.html" %}
-{% block title %}DBM-CHED Configuration — FacultyLink{% endblock %}
+{% block title %}KRA Configuration — FacultyLink{% endblock %}
 {% block sidebar_nav %}{% include "admin/_nav.html" %}{% endblock %}
 {% set active_page = 'kra' %}
 
-{% block content %}
-<h1 class="page-title">DBM-CHED Rule Configuration</h1>
-<p class="page-subtitle">Configure KRA scoring rules, validation requirements, and rank qualification criteria</p>
+{% block extra_head %}{% endblock %}
 
-<form method="POST">
-  {% for rule in rules %}
-  <div class="card" style="margin-bottom:1rem;">
+{% block content %}
+<div class="kra-config-header">
+  <div>
+    <h1 class="page-title">KRA Configuration</h1>
+    <p class="page-subtitle">DBM-CHED NBC No. 461 — faculty evaluation weights, validation rules, and automated scoring</p>
+  </div>
+  <div class="kra-weight-summary {% if total_weight == 100 %}is-valid{% else %}is-invalid{% endif %}" id="weight-summary">
+    <span class="kra-weight-summary__label">Total KRA Weight</span>
+    <span class="kra-weight-summary__value" id="weight-total-display">{{ total_weight }}%</span>
+    <span class="kra-weight-summary__hint">{% if total_weight == 100 %}Weights balanced{% else %}Must equal 100%{% endif %}</span>
+  </div>
+</div>
+
+<div class="kra-config-grid">
+  <section class="card kra-settings-card">
     <div class="card-header">
-      <h3>{{ rule.kra_name }} — KRA Scoring</h3>
-      <span style="font-size:0.75rem;color:var(--text-muted);">Last updated: {{ rule.updated_at }}</span>
+      <h3>Evaluation &amp; Rank Settings</h3>
+      <span class="card-header__meta">Reclassification &amp; simulation</span>
     </div>
-    <div class="form-panel" style="display:grid;grid-template-columns:1fr 1fr 2fr;gap:1rem;">
+    <form method="POST" class="form-panel kra-settings-form">
+      <input type="hidden" name="action" value="save_settings">
       <div class="form-group">
-        <label>Weight (%)</label>
-        <input type="number" name="weight_{{ rule.id }}" value="{{ rule.weight }}" min="0" max="100" step="1">
+        <label for="promotion_min">Minimum Total KRA Score for Promotion</label>
+        <input type="number" id="promotion_min" name="promotion_min" min="0" max="100" step="1"
+               value="{{ settings.get('promotion_min_total_score', '75') }}">
       </div>
       <div class="form-group">
-        <label>Minimum Score</label>
-        <input type="number" name="min_{{ rule.id }}" value="{{ rule.min_score }}" min="0" max="100" step="1">
+        <label for="ched_required">CHED Compliance Document</label>
+        <select id="ched_required" name="ched_required">
+          <option value="1" {% if settings.get('ched_compliance_required', '1') == '1' %}selected{% endif %}>Required — Mandatory</option>
+          <option value="0" {% if settings.get('ched_compliance_required', '1') != '1' %}selected{% endif %}>Optional</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="dbm_circular">DBM Joint Circular Version</label>
+        <input type="text" id="dbm_circular" name="dbm_circular"
+               value="{{ settings.get('dbm_circular_version', 'DBM-CHED Joint Circular No. 2022-1 (NBC No. 461)') }}">
+      </div>
+      <div class="form-group form-group--checkbox">
+        <label>
+          <input type="checkbox" name="auto_score_enabled" value="1"
+                 {% if settings.get('auto_score_enabled', '1') == '1' %}checked{% endif %}>
+          Enable automatic score computation
+        </label>
+      </div>
+      <div class="form-group form-group--checkbox">
+        <label>
+          <input type="checkbox" name="reviewer_validation_required" value="1"
+                 {% if settings.get('reviewer_validation_required', '1') == '1' %}checked{% endif %}>
+          Require reviewer validation before qualification
+        </label>
+      </div>
+      <button type="submit" class="btn btn-primary">Save Evaluation Settings</button>
+    </form>
+  </section>
+
+  <section class="card kra-simulator-card" id="kra-simulator">
+    <div class="card-header">
+      <h3>Rank Simulation &amp; Score Preview</h3>
+      <span class="card-header__meta">Real-time computation</span>
+    </div>
+    <p class="kra-simulator__intro">Adjust accomplishment scores (0–100) per KRA to simulate weighted totals and reclassification eligibility.</p>
+
+    <div class="kra-simulator__inputs">
+      {% for rule in rules %}
+      <div class="form-group kra-sim-input">
+        <label for="sim_{{ rule.kra_slug }}">{{ rule.kra_name }} <span class="text-muted">({{ rule.weight }}%)</span></label>
+        <input type="number" id="sim_{{ rule.kra_slug }}" class="sim-score-input" data-kra-slug="{{ rule.kra_slug }}"
+               min="0" max="100" step="1" value="{{ sim_scores.get(rule.kra_slug, 75) }}">
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="kra-simulator__results" id="sim-results">
+      <div class="kra-total-score">
+        <span class="kra-total-score__label">Computed Total Score</span>
+        <span class="kra-total-score__value" id="sim-total">{{ breakdown.total_score }}%</span>
+      </div>
+      <ul class="kra-breakdown-list" id="sim-breakdown">
+        {% for item in breakdown.kra_items %}
+        <li class="{% if item.passed %}pass{% else %}fail{% endif %}">
+          <span>{{ item.kra_name }}</span>
+          <span>{{ item.raw_score }}% → {{ item.weighted_contribution }}% contrib.</span>
+          <span class="kra-breakdown-list__status">{% if item.passed %}✓ Meets min{% else %}✗ Below {{ item.min_score }}%{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+      <div class="qualification-banner {% if qualification.simulated_qualified %}qualification-banner--pass{% else %}qualification-banner--fail{% endif %}" id="qual-banner">
+        <strong>{% if qualification.simulated_qualified %}Eligible for reclassification (simulated){% else %}Not yet qualified{% endif %}</strong>
+        <ul>
+          {% for note in qualification.notes %}
+          <li>{{ note }}</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<div class="kra-cards-grid">
+  {% for rule in rules %}
+  <article class="card kra-config-card" data-kra-id="{{ rule.id }}">
+    <div class="kra-config-card__view">
+      <div class="card-header kra-config-card__header">
+        <div>
+          <h3>{{ rule.kra_name }}</h3>
+          <span class="kra-config-card__updated">Last updated: {{ rule.updated_at[:19] if rule.updated_at else '—' }}</span>
+        </div>
+        <span class="kra-weight-badge">{{ rule.weight }}%</span>
+      </div>
+
+      <div class="kra-config-card__summary">
+        <div class="kra-stat">
+          <span class="kra-stat__label">Minimum Score</span>
+          <span class="kra-stat__value">{{ rule.min_score }}%</span>
+        </div>
+        <div class="kra-stat">
+          <span class="kra-stat__label">Auto Compute</span>
+          <span class="kra-stat__value">{% if rule.auto_compute %}Enabled{% else %}Manual{% endif %}</span>
+        </div>
+      </div>
+
+      <p class="kra-config-card__desc">{{ rule.description }}</p>
+
+      <div class="kra-config-card__block">
+        <h4>Validation Requirements</h4>
+        <p>{{ rule.validation_rules }}</p>
+      </div>
+
+      <div class="kra-config-card__lists">
+        <div>
+          <h4>Criteria</h4>
+          <ul>{% for c in rule.criteria %}<li>{{ c }}</li>{% else %}<li class="muted">None configured</li>{% endfor %}</ul>
+        </div>
+        <div>
+          <h4>Indicators</h4>
+          <ul>{% for i in rule.indicators %}<li>{{ i }}</li>{% else %}<li class="muted">None configured</li>{% endfor %}</ul>
+        </div>
+        <div>
+          <h4>Point Values</h4>
+          <ul>
+            {% for p in rule.point_values %}
+            <li>{{ p.label }} — <strong>{{ p.points }} pts</strong></li>
+            {% else %}
+            <li class="muted">None configured</li>
+            {% endfor %}
+          </ul>
+        </div>
+        <div>
+          <h4>Documentary Requirements</h4>
+          <ul>{% for d in rule.documentary_requirements %}<li>{{ d }}</li>{% else %}<li class="muted">None configured</li>{% endfor %}</ul>
+        </div>
+      </div>
+
+      <div class="kra-config-card__actions">
+        <button type="button" class="btn btn-secondary btn-sm" data-edit-kra="{{ rule.id }}">Edit</button>
+      </div>
+    </div>
+
+    <form method="POST" class="kra-config-card__edit form-panel" hidden>
+      <input type="hidden" name="action" value="save_kra_{{ rule.id }}">
+      <div class="card-header"><h3>Edit — {{ rule.kra_name }}</h3></div>
+
+      <div class="kra-edit-grid">
+        <div class="form-group">
+          <label>KRA Name</label>
+          <input type="text" value="{{ rule.kra_name }}" disabled>
+          <p class="form-hint">Standard NBC 461 KRA (name fixed)</p>
+        </div>
+        <div class="form-group">
+          <label>Weight Percentage (%)</label>
+          <input type="number" name="weight" class="kra-weight-input" data-kra-id="{{ rule.id }}"
+                 min="0" max="100" step="1" value="{{ rule.weight }}" required>
+        </div>
+        <div class="form-group">
+          <label>Minimum Passing Score (%)</label>
+          <input type="number" name="min_score" min="0" max="100" step="1" value="{{ rule.min_score }}" required>
+        </div>
+        <div class="form-group form-group--checkbox">
+          <label>
+            <input type="checkbox" name="auto_compute" value="1" {% if rule.auto_compute %}checked{% endif %}>
+            Enable automatic score computation for this KRA
+          </label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Description</label>
+        <textarea name="description" rows="2">{{ rule.description }}</textarea>
       </div>
       <div class="form-group">
         <label>Validation Requirements</label>
-        <input type="text" name="rules_{{ rule.id }}" value="{{ rule.validation_rules }}">
+        <textarea name="validation_rules" rows="2">{{ rule.validation_rules }}</textarea>
       </div>
-    </div>
-  </div>
+      <div class="form-group">
+        <label>Criteria <span class="form-hint-inline">(one per line)</span></label>
+        <textarea name="criteria" rows="3">{% for c in rule.criteria %}{{ c }}
+{% endfor %}</textarea>
+      </div>
+      <div class="form-group">
+        <label>Indicators <span class="form-hint-inline">(one per line)</span></label>
+        <textarea name="indicators" rows="3">{% for i in rule.indicators %}{{ i }}
+{% endfor %}</textarea>
+      </div>
+      <div class="form-group">
+        <label>Point Values <span class="form-hint-inline">(Label | Points per line)</span></label>
+        <textarea name="point_values" rows="3">{% for p in rule.point_values %}{{ p.label }} | {{ p.points }}
+{% endfor %}</textarea>
+      </div>
+      <div class="form-group">
+        <label>Documentary Requirements <span class="form-hint-inline">(one per line)</span></label>
+        <textarea name="documentary" rows="3">{% for d in rule.documentary_requirements %}{{ d }}
+{% endfor %}</textarea>
+      </div>
+
+      <div class="kra-config-card__actions">
+        <button type="button" class="btn btn-secondary btn-sm" data-cancel-edit="{{ rule.id }}">Cancel</button>
+        <button type="submit" class="btn btn-primary btn-sm">Save KRA</button>
+      </div>
+    </form>
+  </article>
   {% endfor %}
+</div>
+{% endblock %}
 
-  <div class="card">
-    <div class="card-header"><h3>Rank Qualification Criteria</h3></div>
-    <div class="form-panel">
-      <div class="form-group">
-        <label>Minimum Total KRA Score for Promotion</label>
-        <input type="number" value="75" min="0" max="100">
-      </div>
-      <div class="form-group">
-        <label>CHED Compliance Document Required</label>
-        <select><option>Yes — Mandatory</option><option>Optional</option></select>
-      </div>
-      <div class="form-group">
-        <label>DBM Joint Circular Version</label>
-        <input type="text" value="DBM-CHED Joint Circular 2022-1">
-      </div>
-    </div>
-  </div>
-
-  <div class="action-bar">
-    <button type="submit" class="btn btn-primary">Save System Rule Updates</button>
-  </div>
-</form>
+{% block extra_js %}
+<script>
+  window.KRA_COMPUTE_URL = "{{ url_for('admin_kra_compute') }}";
+</script>
+<script src="{{ url_for('static', filename='js/kra_config.js') }}"></script>
 {% endblock %}

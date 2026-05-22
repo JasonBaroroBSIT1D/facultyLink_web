@@ -19,10 +19,13 @@
       <nav class="sidebar-nav">
         {% block sidebar_nav %}{% endblock %}
       </nav>
-      <div class="sidebar-user">
-        <strong>{{ g.user.full_name }}</strong>
-        <span>{{ 'System Administrator' if g.user.role == 'admin' else 'Reviewer' }}</span>
-      </div>
+      <button type="button" class="sidebar-user" data-open-profile aria-label="View profile">
+        <span class="sidebar-user__avatar" aria-hidden="true">{{ (g.user.full_name or 'U')[:1] }}</span>
+        <span class="sidebar-user__info">
+          <strong>{{ g.user.full_name }}</strong>
+          <span>{{ role_labels.get(g.user.role, g.user.role|title) }}</span>
+        </span>
+      </button>
     </aside>
 
     <div class="main-content">
@@ -31,11 +34,10 @@
         <div class="search-bar">
           <input type="search" placeholder="Search archive, faculty, or documents...">
         </div>
-        <div class="status-pill">
-          <span class="dot"></span>
-          SYSTEM STATUS: OPTIMAL
-        </div>
         <div class="topbar-actions">
+          <button type="button" class="icon-btn profile-trigger" data-open-profile title="My Profile" aria-label="My Profile">
+            <span class="profile-trigger__avatar" aria-hidden="true">{{ (g.user.full_name or 'U')[:1] }}</span>
+          </button>
           <a href="{{ url_for('admin_notifications') if g.user.role == 'admin' else url_for('reviewer_dashboard') }}" class="icon-btn" title="Notifications">🔔</a>
           <a href="{{ url_for('logout') }}" class="logout-btn" title="Logout" aria-label="Logout">
             <svg class="logout-btn__icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -55,6 +57,8 @@
       </main>
     </div>
   </div>
+  {% include 'partials/profile_modal.html' %}
+
   <script src="{{ url_for('static', filename='js/chart.umd.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/main.js') }}"></script>
   {% block extra_js %}{% endblock %}

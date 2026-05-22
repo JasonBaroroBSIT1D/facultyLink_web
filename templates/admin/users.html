@@ -5,31 +5,45 @@
 
 {% block content %}
 <h1 class="page-title">User Management</h1>
-<p class="page-subtitle">Create reviewer accounts, manage roles, and monitor activity</p>
+<p class="page-subtitle">Create accounts, assign roles, and manage user access</p>
 
-<div class="card" style="margin-bottom:1.5rem;">
-  <div class="card-header"><h3>Create Reviewer Account</h3></div>
-  <form method="POST" class="form-panel" style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:1rem;align-items:end;">
+<div class="card user-create-card">
+  <div class="card-header"><h3>Create User Account</h3></div>
+  <form method="POST" class="form-panel user-create-form">
     <input type="hidden" name="action" value="create">
     <div class="form-group">
-      <label>Full Name</label>
-      <input type="text" name="full_name" required placeholder="Dr. Jane Smith">
+      <label for="full_name">Full Name</label>
+      <input type="text" id="full_name" name="full_name" required placeholder="Dr. Jane Smith">
     </div>
     <div class="form-group">
-      <label>Email</label>
-      <input type="email" name="email" required placeholder="reviewer@university.edu">
+      <label for="email">Email</label>
+      <input type="email" id="email" name="email" required placeholder="user@university.edu">
     </div>
     <div class="form-group">
-      <label>Initial Password</label>
-      <input type="text" name="password" value="reviewer123">
+      <label for="role">Role</label>
+      <select id="role" name="role" required>
+        <option value="admin">Admin</option>
+        <option value="reviewer" selected>Reviewer</option>
+        <option value="faculty">Faculty</option>
+      </select>
     </div>
-    <button type="submit" class="btn btn-primary">Create Account</button>
+    <div class="form-group">
+      <label for="password">Initial Password</label>
+      <input type="text" id="password" name="password" value="reviewer123" placeholder="Initial password">
+    </div>
+    <div class="form-group user-create-form__action">
+      <button type="submit" class="btn btn-primary">Create Account</button>
+    </div>
   </form>
 </div>
 
 <div class="card">
+  <div class="card-header card-header--table">
+    <h3>All Users</h3>
+    <span class="card-header__meta">{{ users|length }} accounts</span>
+  </div>
   <div class="data-table-wrap">
-    <table class="data-table">
+    <table class="data-table data-table--users">
       <thead>
         <tr>
           <th>Name</th>
@@ -44,8 +58,10 @@
         {% for u in users %}
         <tr>
           <td><strong>{{ u.full_name }}</strong></td>
-          <td>{{ u.email }}</td>
-          <td>{{ u.role|title }}</td>
+          <td class="text-muted-cell">{{ u.email }}</td>
+          <td>
+            <span class="role-badge role-badge--{{ u.role }}">{{ role_labels.get(u.role, u.role|title) }}</span>
+          </td>
           <td>
             {% if u.active %}
             <span class="status-tag status-approved">Active</span>
@@ -54,20 +70,20 @@
             {% endif %}
           </td>
           <td>{{ u.review_count or 0 }}</td>
-          <td>
-            {% if u.role == 'reviewer' %}
-            <form method="POST" style="display:inline;">
+          <td class="table-actions">
+            {% if u.role in ('reviewer', 'faculty') %}
+            <form method="POST" class="inline-form">
               <input type="hidden" name="action" value="toggle">
               <input type="hidden" name="user_id" value="{{ u.id }}">
               <button type="submit" class="btn btn-sm btn-secondary">Toggle</button>
             </form>
-            <form method="POST" style="display:inline;">
+            <form method="POST" class="inline-form">
               <input type="hidden" name="action" value="reset">
               <input type="hidden" name="user_id" value="{{ u.id }}">
               <button type="submit" class="btn btn-sm btn-secondary">Reset Password</button>
             </form>
             {% else %}
-            —
+            <span class="text-muted-cell">—</span>
             {% endif %}
           </td>
         </tr>

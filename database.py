@@ -1,6 +1,122 @@
+import json
 import sqlite3
 from werkzeug.security import generate_password_hash, check_password_hash
 from config import DATABASE
+
+STANDARD_KRA_DEFINITIONS = [
+    {
+        "kra_slug": "instruction",
+        "kra_name": "Instruction",
+        "weight": 40,
+        "min_score": 70,
+        "description": "Teaching effectiveness, course delivery, and student outcomes per NBC 461.",
+        "validation_rules": "Teaching load verification, student evaluation forms, syllabus and course portfolio",
+        "criteria": [
+            "Quality of teaching and learning materials",
+            "Student feedback and evaluation ratings",
+            "Compliance with prescribed teaching load",
+        ],
+        "indicators": [
+            "Average student rating ≥ 4.0/5.0",
+            "Complete syllabus and course outline on file",
+            "Peer/classroom observation documented",
+        ],
+        "point_values": [
+            {"label": "Excellent teaching portfolio", "points": 40},
+            {"label": "Satisfactory student evaluations", "points": 25},
+            {"label": "Updated instructional materials", "points": 15},
+        ],
+        "documentary_requirements": [
+            "Signed teaching load certificate",
+            "Student evaluation summary (CHED format)",
+            "Course syllabus and IMs per term",
+        ],
+    },
+    {
+        "kra_slug": "research-innovation-and-creative-work",
+        "kra_name": "Research, Innovation, and Creative Work",
+        "weight": 30,
+        "min_score": 75,
+        "description": "Research outputs, innovation, and creative works aligned with CHED standards.",
+        "validation_rules": "Peer-reviewed publications, citations, funded research, IP disclosures",
+        "criteria": [
+            "Published research in accredited outlets",
+            "Innovation and technology transfer",
+            "Creative works with documented impact",
+        ],
+        "indicators": [
+            "Minimum one peer-reviewed publication (3 years)",
+            "Research grant or funded project documentation",
+            "Citation or impact metric report",
+        ],
+        "point_values": [
+            {"label": "Indexed journal article", "points": 35},
+            {"label": "Research grant / funded project", "points": 30},
+            {"label": "Innovation / creative work exhibit", "points": 20},
+        ],
+        "documentary_requirements": [
+            "Copies of published articles or DOI proof",
+            "Grant contract or MOA",
+            "CHED research monitoring form",
+        ],
+    },
+    {
+        "kra_slug": "extension-services",
+        "kra_name": "Extension Services",
+        "weight": 20,
+        "min_score": 65,
+        "description": "Community engagement, extension programs, and public service.",
+        "validation_rules": "Extension program narrative, beneficiary data, partner MOAs",
+        "criteria": [
+            "Community outreach and extension activities",
+            "Partnerships with LGU/industry",
+            "Documented social impact",
+        ],
+        "indicators": [
+            "At least one extension program per year",
+            "Beneficiary count and activity reports",
+            "MOA with partner agency",
+        ],
+        "point_values": [
+            {"label": "Major extension program lead", "points": 30},
+            {"label": "Participation in extension activity", "points": 15},
+            {"label": "Extension report with impact data", "points": 20},
+        ],
+        "documentary_requirements": [
+            "Extension program terminal report",
+            "Photos / attendance sheets",
+            "Partner MOA or endorsement letter",
+        ],
+    },
+    {
+        "kra_slug": "professional-development",
+        "kra_name": "Professional Development",
+        "weight": 10,
+        "min_score": 60,
+        "description": "Trainings, certifications, and continuing professional development.",
+        "validation_rules": "Training certificates, CPD units, graduate studies documentation",
+        "criteria": [
+            "Relevant trainings and seminars",
+            "Professional licenses and certifications",
+            "Advanced degree or credential progress",
+        ],
+        "indicators": [
+            "Minimum 40 CPD units (if applicable)",
+            "Certificate of training completion",
+            "License renewal proof",
+        ],
+        "point_values": [
+            {"label": "National/international training", "points": 25},
+            {"label": "Professional certification", "points": 20},
+            {"label": "Graduate studies units completed", "points": 30},
+        ],
+        "documentary_requirements": [
+            "Training certificates with hours/CPD",
+            "PRC license (if applicable)",
+            "Transcript or graduate study proof",
+        ],
+    },
+]
 
 
 def _new_connection():
@@ -33,6 +149,109 @@ def close_db(_exc=None):
         db.close()
 
 
+def migrate_faculty_role(conn):
+    """Allow faculty role on existing databases created before the role was added."""
+    row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+    ).fetchone()
+    if not row or not row[0] or "'faculty'" in row[0]:
+        return
+    conn.executescript("""
+        CREATE TABLE users_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            full_name TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'reviewer', 'faculty')),
+            active INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO users_new SELECT * FROM users;
+        DROP TABLE users;
+        ALTER TABLE users_new RENAME TO users;
+    """)
+    conn.commit()
+
+
+def migrate_kra_rules_extended(conn):
+    """Add NBC 461 configuration columns and ensure standard KRAs exist."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(kra_rules)").fetchall()}
+    new_cols = [
+        ("kra_slug", "TEXT"),
+        ("description", "TEXT"),
+        ("criteria_json", "TEXT"),
+        ("indicators_json", "TEXT"),
+        ("point_values_json", "TEXT"),
+        ("documentary_json", "TEXT"),
+        ("auto_compute", "INTEGER DEFAULT 1"),
+    ]
+    for name, col_type in new_cols:
+        if name not in cols:
+            conn.execute(f"ALTER TABLE kra_rules ADD COLUMN {name} {col_type}")
+
+    legacy_names = {
+        "Research": "research-innovation-and-creative-work",
+        "Extension": "extension-services",
+        "Prof Dev": "professional-development",
+        "Instruction": "instruction",
+    }
+    for old_name, slug in legacy_names.items():
+        conn.execute(
+            "UPDATE kra_rules SET kra_slug = ? WHERE kra_name = ? AND (kra_slug IS NULL OR kra_slug = '')",
+            (slug, old_name),
+        )
+
+    for kra in STANDARD_KRA_DEFINITIONS:
+        row = conn.execute(
+            "SELECT id FROM kra_rules WHERE kra_slug = ?", (kra["kra_slug"],)
+        ).fetchone()
+        payload = (
+            kra["kra_name"],
+            kra["weight"],
+            kra["min_score"],
+            kra["validation_rules"],
+            kra["description"],
+            json.dumps(kra["criteria"]),
+            json.dumps(kra["indicators"]),
+            json.dumps(kra["point_values"]),
+            json.dumps(kra["documentary_requirements"]),
+            1,
+            kra["kra_slug"],
+        )
+        if row:
+            conn.execute(
+                """UPDATE kra_rules SET
+                   kra_name=?, weight=?, min_score=?, validation_rules=?, description=?,
+                   criteria_json=?, indicators_json=?, point_values_json=?, documentary_json=?,
+                   auto_compute=?, kra_slug=?, updated_at=datetime('now')
+                   WHERE id=?""",
+                (*payload, row[0]),
+            )
+        else:
+            conn.execute(
+                """INSERT INTO kra_rules
+                   (kra_name, weight, min_score, validation_rules, description,
+                    criteria_json, indicators_json, point_values_json, documentary_json,
+                    auto_compute, kra_slug)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                payload,
+            )
+
+    defaults = {
+        "promotion_min_total_score": "75",
+        "ched_compliance_required": "1",
+        "dbm_circular_version": "DBM-CHED Joint Circular No. 2022-1 (NBC No. 461)",
+        "auto_score_enabled": "1",
+        "reviewer_validation_required": "1",
+    }
+    for key, value in defaults.items():
+        conn.execute(
+            "INSERT OR IGNORE INTO system_config (key, value) VALUES (?, ?)",
+            (key, value),
+        )
+    conn.commit()
+
+
 def init_db():
     conn = _new_connection()
     c = conn.cursor()
@@ -42,7 +261,7 @@ def init_db():
             email TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             full_name TEXT NOT NULL,
-            role TEXT NOT NULL CHECK(role IN ('admin', 'reviewer')),
+            role TEXT NOT NULL CHECK(role IN ('admin', 'reviewer', 'faculty')),
             active INTEGER DEFAULT 1,
             created_at TEXT DEFAULT CURRENT_TIMESTAMP
         );
@@ -97,8 +316,27 @@ def init_db():
         );
     """)
     conn.commit()
+    migrate_faculty_role(conn)
+    migrate_kra_rules_extended(conn)
     seed_data(conn)
     conn.close()
+
+
+def get_system_config(conn):
+    rows = conn.execute("SELECT key, value FROM system_config").fetchall()
+    return {r["key"]: r["value"] for r in rows}
+
+
+def set_system_config(conn, key, value):
+    conn.execute(
+        "INSERT OR REPLACE INTO system_config (key, value) VALUES (?, ?)",
+        (key, str(value)),
+    )
+
+
+def fetch_kra_rules(conn):
+    rows = conn.execute("SELECT * FROM kra_rules ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
 
 
 def seed_data(conn):
@@ -153,16 +391,38 @@ def seed_data(conn):
             (title, msg, ntype),
         )
 
-    kra_rules = [
-        ("Instruction", 25, 70, "Teaching load, student eval, syllabus documentation"),
-        ("Research", 30, 75, "Publications, citations, research grants"),
-        ("Extension", 25, 65, "Community service, outreach documentation"),
-        ("Prof Dev", 20, 60, "Trainings, certifications, workshops"),
-    ]
-    for name, weight, min_score, rules in kra_rules:
+    if c.execute("SELECT COUNT(*) FROM kra_rules").fetchone()[0] == 0:
+        for kra in STANDARD_KRA_DEFINITIONS:
+            c.execute(
+                """INSERT INTO kra_rules
+                   (kra_name, weight, min_score, validation_rules, description,
+                    criteria_json, indicators_json, point_values_json, documentary_json,
+                    auto_compute, kra_slug)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    kra["kra_name"],
+                    kra["weight"],
+                    kra["min_score"],
+                    kra["validation_rules"],
+                    kra["description"],
+                    json.dumps(kra["criteria"]),
+                    json.dumps(kra["indicators"]),
+                    json.dumps(kra["point_values"]),
+                    json.dumps(kra["documentary_requirements"]),
+                    1,
+                    kra["kra_slug"],
+                ),
+            )
+    for key, value in [
+        ("promotion_min_total_score", "75"),
+        ("ched_compliance_required", "1"),
+        ("dbm_circular_version", "DBM-CHED Joint Circular No. 2022-1 (NBC No. 461)"),
+        ("auto_score_enabled", "1"),
+        ("reviewer_validation_required", "1"),
+    ]:
         c.execute(
-            "INSERT INTO kra_rules (kra_name, weight, min_score, validation_rules) VALUES (?, ?, ?, ?)",
-            (name, weight, min_score, rules),
+            "INSERT INTO system_config (key, value) VALUES (?, ?)",
+            (key, value),
         )
 
     logs = [
