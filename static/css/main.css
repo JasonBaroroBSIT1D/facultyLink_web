@@ -1645,3 +1645,89 @@ table.data-table tr:hover td { background: #fafbfc; }
 @media (max-width: 768px) {
   .menu-toggle { display: block; }
 }
+
+/* ─── Document Monitoring enhancements ──────────────────────── */
+.stat-card--link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.stat-card--link:hover {
+  box-shadow: var(--shadow-lg);
+  transform: translateY(-2px);
+  text-decoration: none;
+}
+
+.kra-tag {
+  display: inline-block;
+  padding: 0.2rem 0.55rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+.kra-instruction    { background: #ede9fe; color: #5b21b6; }
+.kra-research       { background: #dbeafe; color: #1e40af; }
+.kra-extension      { background: #dcfce7; color: #166534; }
+.kra-prof-dev       { background: #fef3c7; color: #92400e; }
+
+.ocr-bar-wrap {
+  width: 60px;
+  height: 6px;
+  background: var(--bg-card);
+  border-radius: 3px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.ocr-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+.ocr-high { background: #22c55e; }
+.ocr-mid  { background: #f59e0b; }
+.ocr-low  { background: #ef4444; }
+
+.status-non_compliant { background: #fee2e2; color: #b91c1c; }
+.status-under_review  { background: #dbeafe; color: #1e40af; }
+.status-compliant     { background: #dcfce7; color: #166534; }
+
+/* ─── Analytics dashboard ────────────────────────────────────── */
+.analytics-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.25rem;
+}
+@media (max-width: 1000px) {
+  .analytics-row { grid-template-columns: 1fr; }
+}
+
+.analytics-kpi .value { font-size: 1.6rem; }
+
+.kpi-good { color: #166534; }
+.kpi-warn { color: #92400e; }
+.kpi-bad  { color: #b91c1c; }
+
+.kpi-trend {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+}
+
+.kpi-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.kpi-dot--good { background: #22c55e; }
+.kpi-dot--warn { background: #f59e0b; }
+
+@media print {
+  .sidebar, .topbar, .btn, .filters-bar { display: none !important; }
+  .main-content { margin-left: 0 !important; }
+  .card { box-shadow: none !important; border: 1px solid #ccc !important; }
+}

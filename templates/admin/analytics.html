@@ -4,74 +4,353 @@
 {% set active_page = 'analytics' %}
 
 {% block content %}
-<h1 class="page-title">Reports & Analytics</h1>
-<p class="page-subtitle">Submission statistics, compliance analytics, and faculty evaluation trends</p>
-
-<div class="stats-grid">
-  {% for item in by_status %}
-  <div class="stat-card">
-    <div class="label">{{ item.status|title }}</div>
-    <div class="value">{{ item.cnt }}</div>
+<div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem; margin-bottom:0.25rem;">
+  <div>
+    <h1 class="page-title" style="margin-bottom:0.1rem;">Reports &amp; Analytics</h1>
+    <p class="page-subtitle" style="margin-bottom:0;">Strategic evaluation insights — DBM–CHED Joint Circular performance framework</p>
   </div>
-  {% endfor %}
-</div>
-
-<div class="dashboard-grid">
-  <div class="card">
-    <div class="card-header"><h3>Submission Status Distribution</h3></div>
-    <canvas id="statusChart"
-      data-labels='{{ by_status | map(attribute="status") | list | tojson }}'
-      data-values='{{ by_status | map(attribute="cnt") | list | tojson }}'></canvas>
-  </div>
-  <div class="card">
-    <div class="card-header"><h3>Submissions by KRA</h3></div>
-    <canvas id="kraChart"
-      data-labels='{{ by_kra | map(attribute="kra_type") | list | tojson }}'
-      data-values='{{ by_kra | map(attribute="cnt") | list | tojson }}'></canvas>
+  <div style="display:flex; gap:0.5rem; align-items:center; flex-shrink:0;">
+    <button onclick="window.print()" class="btn btn-secondary btn-sm">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      Print Report
+    </button>
+    <a href="{{ url_for('admin_submissions') }}" class="btn btn-secondary btn-sm">View Submissions →</a>
   </div>
 </div>
 
-<div class="card" style="margin-top:1rem;">
-  <div class="card-header"><h3>Compliance Analytics</h3></div>
-  <div class="validation-grid">
-    {% for c in by_compliance %}
-    <div class="val-indicator {% if c.compliance_status == 'compliant' %}pass{% elif c.compliance_status == 'non_compliant' %}fail{% else %}warn{% endif %}">
-      <div class="pct">{{ c.cnt }}</div>
-      <div class="lbl">{{ c.compliance_status|replace('_',' ')|title }}</div>
+<!-- KPI Summary Cards -->
+<div class="stats-grid" style="grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); margin-top:1.25rem; margin-bottom:1.25rem;">
+  <div class="stat-card analytics-kpi">
+    <div class="label">Faculty Compliance Rate</div>
+    <div class="value {% if summary.compliance_rate >= 70 %}kpi-good{% elif summary.compliance_rate >= 50 %}kpi-warn{% else %}kpi-bad{% endif %}">
+      {{ summary.compliance_rate }}%
+    </div>
+    <div class="kpi-trend">
+      <span class="kpi-dot {% if summary.compliance_rate >= 70 %}kpi-dot--good{% else %}kpi-dot--warn{% endif %}"></span>
+      DBM–CHED standard
+    </div>
+  </div>
+  <div class="stat-card analytics-kpi">
+    <div class="label">Promotion Readiness</div>
+    <div class="value {% if summary.promotion_readiness >= 60 %}kpi-good{% elif summary.promotion_readiness >= 40 %}kpi-warn{% else %}kpi-bad{% endif %}">
+      {{ summary.promotion_readiness }}%
+    </div>
+    <div class="kpi-trend">Approved submissions</div>
+  </div>
+  <div class="stat-card analytics-kpi">
+    <div class="label">Avg OCR Confidence</div>
+    <div class="value {% if summary.avg_ocr >= 80 %}kpi-good{% elif summary.avg_ocr >= 60 %}kpi-warn{% else %}kpi-bad{% endif %}">
+      {{ summary.avg_ocr }}%
+    </div>
+    <div class="kpi-trend">Document quality index</div>
+  </div>
+  <div class="stat-card analytics-kpi">
+    <div class="label">Most Submitted KRA</div>
+    <div class="value" style="font-size:1.1rem; padding-top:0.25rem;">{{ summary.top_kra }}</div>
+    <div class="kpi-trend">Highest volume category</div>
+  </div>
+  <div class="stat-card analytics-kpi">
+    <div class="label">Top Performing KRA</div>
+    <div class="value" style="font-size:1.1rem; padding-top:0.25rem;">{{ summary.best_kra }}</div>
+    <div class="kpi-trend">{{ summary.best_kra_score }}% avg confidence</div>
+  </div>
+  <div class="stat-card analytics-kpi">
+    <div class="label">Total Evaluated</div>
+    <div class="value">{{ summary.total }}</div>
+    <div class="kpi-trend">All-time submissions</div>
+  </div>
+</div>
+
+<!-- Row 1: Monthly Trend + Compliance Breakdown -->
+<div class="analytics-row" style="margin-bottom:1.25rem;">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3>Monthly Submission Trends</h3>
+        <p>Faculty document submission volume over time</p>
+      </div>
+    </div>
+    <div style="height:220px; position:relative;">
+      <canvas id="monthlyChart"
+        data-labels='{{ monthly | map(attribute="month") | list | tojson }}'
+        data-values='{{ monthly | map(attribute="cnt")   | list | tojson }}'></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3>Compliance Status Distribution</h3>
+        <p>DBM–CHED compliance breakdown</p>
+      </div>
+    </div>
+    <div style="height:180px; position:relative; margin-bottom:0.75rem;">
+      <canvas id="complianceChart"
+        data-labels='{{ by_compliance | map(attribute="compliance_status") | list | tojson }}'
+        data-values='{{ by_compliance | map(attribute="cnt") | list | tojson }}'></canvas>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; justify-content:center;">
+      {% for c in by_compliance %}
+      <span class="status-tag status-{{ c.compliance_status }}" style="font-size:0.72rem;">
+        {{ c.compliance_status | replace('_',' ') | title }}: {{ c.cnt }}
+      </span>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<!-- Row 2: KRA Performance + Reviewer Workload -->
+<div class="analytics-row" style="margin-bottom:1.25rem;">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3>KRA Performance Analysis</h3>
+        <p>Average OCR confidence score per KRA category</p>
+      </div>
+    </div>
+    {% for k in by_kra %}
+    {% set pct = k.avg_conf | default(0) | round(1) %}
+    <div style="margin-bottom:0.85rem;">
+      <div style="display:flex; justify-content:space-between; font-size:0.82rem; margin-bottom:0.3rem;">
+        <span style="font-weight:600;">{{ k.kra_type or '—' }}</span>
+        <span style="display:flex; gap:0.75rem; color:var(--text-muted);">
+          <span>{{ k.cnt }} submissions</span>
+          <span style="font-weight:700; color:{% if pct >= 80 %}#166534{% elif pct >= 60 %}#92400e{% else %}#b91c1c{% endif %};">{{ pct }}%</span>
+        </span>
+      </div>
+      <div style="height:8px; background:var(--bg-card); border-radius:4px; overflow:hidden;">
+        <div style="height:100%; width:{{ [pct,100]|min }}%; border-radius:4px;
+          background:{% if pct >= 80 %}#22c55e{% elif pct >= 60 %}#f59e0b{% else %}#ef4444{% endif %};
+          transition:width 0.4s;"></div>
+      </div>
+    </div>
+    {% endfor %}
+    <div style="margin-top:1rem; height:180px; position:relative;">
+      <canvas id="kraChart"
+        data-labels='{{ by_kra | map(attribute="kra_type") | list | tojson }}'
+        data-values='{{ by_kra | map(attribute="avg_conf") | list | tojson }}'></canvas>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3>Reviewer Workload Distribution</h3>
+        <p>Evaluation activity per assigned reviewer</p>
+      </div>
+    </div>
+    {% if reviewer_activity %}
+    {% set max_reviews = reviewer_activity | map(attribute='total_reviews') | max %}
+    {% for r in reviewer_activity %}
+    {% set pct = ((r.total_reviews / (max_reviews or 1)) * 100) | round %}
+    <div style="margin-bottom:1rem;">
+      <div style="display:flex; justify-content:space-between; font-size:0.82rem; margin-bottom:0.3rem;">
+        <span style="font-weight:600;">{{ r.full_name }}</span>
+        <span style="color:var(--text-muted);">{{ r.total_reviews }} total</span>
+      </div>
+      <div style="height:8px; background:var(--bg-card); border-radius:4px; overflow:hidden; margin-bottom:0.3rem;">
+        <div style="height:100%; width:{{ pct }}%; background:var(--navy); border-radius:4px;"></div>
+      </div>
+      <div style="display:flex; gap:0.75rem; font-size:0.72rem;">
+        <span style="color:#166534;">✓ {{ r.approved }} approved</span>
+        <span style="color:#b91c1c;">✗ {{ r.rejected }} rejected</span>
+        <span style="color:#92400e;">⏳ {{ r.pending }} pending</span>
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <p style="color:var(--text-muted); font-size:0.85rem;">No reviewer data available.</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Row 3: Rejection Reasons + Evaluation Status Donut -->
+<div class="analytics-row" style="margin-bottom:1.25rem;">
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3>Common Rejection Reasons</h3>
+        <p>Categorized from reviewer feedback comments</p>
+      </div>
+    </div>
+    {% set max_rej = rejection_reasons[0].count if rejection_reasons else 1 %}
+    {% for r in rejection_reasons %}
+    <div style="margin-bottom:0.75rem;">
+      <div style="display:flex; justify-content:space-between; font-size:0.82rem; margin-bottom:0.25rem;">
+        <span>{{ r.reason }}</span>
+        <span style="font-weight:700; color:#b91c1c;">{{ r.count }}</span>
+      </div>
+      <div style="height:7px; background:var(--bg-card); border-radius:4px; overflow:hidden;">
+        <div style="height:100%; width:{{ ((r.count / max_rej) * 100) | round }}%; background:#ef4444; border-radius:4px;"></div>
+      </div>
     </div>
     {% endfor %}
   </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div>
+        <h3>Evaluation Status Overview</h3>
+        <p>Overall submission outcome distribution</p>
+      </div>
+    </div>
+    <div style="height:200px; position:relative; margin-bottom:0.75rem;">
+      <canvas id="statusChart"
+        data-labels='{{ by_status | map(attribute="status") | list | tojson }}'
+        data-values='{{ by_status | map(attribute="cnt")    | list | tojson }}'></canvas>
+    </div>
+    <div style="display:flex; flex-wrap:wrap; gap:0.5rem; justify-content:center;">
+      {% for s in by_status %}
+      <span class="status-tag status-{{ s.status }}">{{ s.status | title }}: {{ s.cnt }}</span>
+      {% endfor %}
+    </div>
+  </div>
 </div>
 
-<div class="card" style="margin-top:1rem;">
-  <div class="card-header"><h3>Reviewer Activity</h3></div>
-  <table class="data-table">
-    <thead><tr><th>Reviewer</th><th>Reviews Completed</th><th>Success Rate</th></tr></thead>
-    <tbody>
-      {% for r in reviewer_activity %}
-      <tr>
-        <td>{{ r.full_name }}</td>
-        <td>{{ r.reviews }}</td>
-        <td>{{ (r.reviews * 18 + 62) if r.reviews else 0 }}%</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<!-- Reviewer Summary Table -->
+<div class="card" style="margin-bottom:1.25rem;">
+  <div class="card-header">
+    <div>
+      <h3>Reviewer Activity Statistics</h3>
+      <p>Detailed evaluation performance per reviewer</p>
+    </div>
+    <a href="{{ url_for('admin_reviewer_assignment') }}" class="btn btn-secondary btn-sm">Manage Assignments →</a>
+  </div>
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Reviewer</th>
+          <th>Total Assigned</th>
+          <th>Approved</th>
+          <th>Rejected</th>
+          <th>Pending</th>
+          <th>Approval Rate</th>
+          <th>Workload</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reviewer_activity %}
+        {% set rate = ((r.approved / r.total_reviews) * 100) | round(1) if r.total_reviews else 0 %}
+        <tr>
+          <td><strong>{{ r.full_name }}</strong></td>
+          <td>{{ r.total_reviews }}</td>
+          <td style="color:#166534; font-weight:600;">{{ r.approved }}</td>
+          <td style="color:#b91c1c; font-weight:600;">{{ r.rejected }}</td>
+          <td style="color:#92400e;">{{ r.pending }}</td>
+          <td>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <div style="width:60px; height:6px; background:var(--bg-card); border-radius:3px; overflow:hidden;">
+                <div style="height:100%; width:{{ rate }}%; background:#22c55e; border-radius:3px;"></div>
+              </div>
+              <span style="font-size:0.78rem; font-weight:600;">{{ rate }}%</span>
+            </div>
+          </td>
+          <td>
+            {% if r.total_reviews == 0 %}
+            <span style="color:var(--text-light); font-size:0.78rem;">No activity</span>
+            {% elif r.pending > 3 %}
+            <span class="badge badge-urgent">High load</span>
+            {% elif r.pending > 0 %}
+            <span class="badge badge-pending">Active</span>
+            {% else %}
+            <span class="badge badge-stable">Up to date</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" style="text-align:center; color:var(--text-muted); padding:2rem;">No reviewer data.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
 </div>
 
-<div class="card" style="margin-top:1rem;">
-  <div class="card-header"><h3>KRA Scoring Summary</h3></div>
-  <table class="data-table">
-    <thead><tr><th>KRA Type</th><th>Submissions</th><th>Avg OCR Confidence</th></tr></thead>
-    <tbody>
-      {% for k in by_kra %}
-      <tr>
-        <td>{{ k.kra_type }}</td>
-        <td>{{ k.cnt }}</td>
-        <td>{{ '%.1f'|format(k.avg_conf or 0) }}%</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<!-- DBM-CHED Notice -->
+<div style="padding:0.75rem 1rem; background:#eff6ff; border:1px solid #bfdbfe; border-radius:8px;
+            font-size:0.78rem; color:#1e40af; display:flex; gap:0.5rem; align-items:flex-start;">
+  <span>ℹ</span>
+  <span>This analytics dashboard provides strategic decision-support data for administrators. Evaluation decisions and document validation remain the responsibility of assigned reviewers under the DBM–CHED Joint Circular framework.</span>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // Monthly trend — bar chart
+  const monthlyEl = document.getElementById('monthlyChart');
+  if (monthlyEl && typeof Chart !== 'undefined') {
+    new Chart(monthlyEl, {
+      type: 'bar',
+      data: {
+        labels: JSON.parse(monthlyEl.dataset.labels || '[]'),
+        datasets: [{
+          label: 'Submissions',
+          data: JSON.parse(monthlyEl.dataset.values || '[]'),
+          backgroundColor: '#002D4F',
+          borderRadius: 5,
+          borderSkipped: false,
+        }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } }
+      }
+    });
+  }
+
+  // Compliance — doughnut
+  const compEl = document.getElementById('complianceChart');
+  if (compEl && typeof Chart !== 'undefined') {
+    new Chart(compEl, {
+      type: 'doughnut',
+      data: {
+        labels: JSON.parse(compEl.dataset.labels || '[]').map(l => l.replace(/_/g,' ')),
+        datasets: [{ data: JSON.parse(compEl.dataset.values || '[]'),
+          backgroundColor: ['#22c55e','#ef4444','#f59e0b','#94a3b8'], borderWidth: 2 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } } } }
+    });
+  }
+
+  // KRA avg confidence — horizontal bar
+  const kraEl = document.getElementById('kraChart');
+  if (kraEl && typeof Chart !== 'undefined') {
+    new Chart(kraEl, {
+      type: 'bar',
+      data: {
+        labels: JSON.parse(kraEl.dataset.labels || '[]'),
+        datasets: [{
+          label: 'Avg OCR Confidence (%)',
+          data: JSON.parse(kraEl.dataset.values || '[]').map(v => parseFloat(v || 0).toFixed(1)),
+          backgroundColor: ['#4a9fd4','#002D4F','#22c55e','#f59e0b'],
+          borderRadius: 4,
+        }]
+      },
+      options: {
+        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true, max: 100, grid: { color: '#f1f5f9' } }, y: { grid: { display: false } } }
+      }
+    });
+  }
+
+  // Status — doughnut
+  const statusEl = document.getElementById('statusChart');
+  if (statusEl && typeof Chart !== 'undefined') {
+    new Chart(statusEl, {
+      type: 'doughnut',
+      data: {
+        labels: JSON.parse(statusEl.dataset.labels || '[]').map(l => l.charAt(0).toUpperCase() + l.slice(1)),
+        datasets: [{ data: JSON.parse(statusEl.dataset.values || '[]'),
+          backgroundColor: ['#f59e0b','#22c55e','#ef4444','#4a9fd4'], borderWidth: 2 }]
+      },
+      options: { responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } } } }
+    });
+  }
+});
+</script>
 {% endblock %}

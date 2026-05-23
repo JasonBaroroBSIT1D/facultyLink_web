@@ -5,14 +5,77 @@
 {% from 'macros.html' import status_badge %}
 
 {% block content %}
-<h1 class="page-title">Faculty Submission Monitoring</h1>
-<p class="page-subtitle">Track progress, filter by status, and view validation history</p>
+<h1 class="page-title">Document Monitoring</h1>
+<p class="page-subtitle">Administrative oversight of faculty submissions — DBM–CHED Joint Circular compliance tracking</p>
 
-<form class="filters-bar" method="GET">
-  <input type="text" name="q" placeholder="Search faculty or documents..." value="{{ request.args.get('q', '') }}">
+<!-- Analytics Cards -->
+<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); margin-bottom: 1.25rem;">
+  <div class="stat-card">
+    <div class="label">Total Submissions</div>
+    <div class="value">{{ stats.total }}</div>
+  </div>
+  <a href="?status=pending" class="stat-card stat-card--link">
+    <div class="label">Pending Review</div>
+    <div class="value" style="color: #92400e;">{{ stats.pending }}</div>
+    {% if stats.pending > 0 %}<span class="badge badge-pending">ACTION NEEDED</span>{% endif %}
+  </a>
+  <a href="?status=approved" class="stat-card stat-card--link">
+    <div class="label">Approved</div>
+    <div class="value" style="color: #166534;">{{ stats.approved }}</div>
+    <span class="badge badge-stable">VALIDATED</span>
+  </a>
+  <a href="?status=rejected" class="stat-card stat-card--link">
+    <div class="label">Rejected</div>
+    <div class="value" style="color: #b91c1c;">{{ stats.rejected }}</div>
+  </a>
+  <a href="?compliance=non_compliant" class="stat-card stat-card--link">
+    <div class="label">Non-Compliant</div>
+    <div class="value" style="color: #b91c1c;">{{ stats.non_compliant }}</div>
+    {% if stats.non_compliant > 0 %}<span class="badge badge-urgent">REVIEW</span>{% endif %}
+  </a>
+  <div class="stat-card">
+    <div class="label">Avg OCR Confidence</div>
+    <div class="value">{{ stats.avg_ocr }}%</div>
+    {% if stats.low_ocr > 0 %}
+    <span class="badge badge-urgent">{{ stats.low_ocr }} low</span>
+    {% endif %}
+  </div>
+  <a href="{{ url_for('admin_reviewer_assignment') }}" class="stat-card stat-card--link">
+    <div class="label">Unassigned</div>
+    <div class="value" style="color: #92400e;">{{ stats.unassigned }}</div>
+    {% if stats.unassigned > 0 %}<span class="badge badge-pending">ASSIGN</span>{% endif %}
+  </a>
+</div>
+
+<!-- Validation Progress Bar -->
+{% if stats.total > 0 %}
+{% set approved_pct = ((stats.approved / stats.total) * 100) | round(1) %}
+{% set pending_pct  = ((stats.pending  / stats.total) * 100) | round(1) %}
+{% set rejected_pct = ((stats.rejected / stats.total) * 100) | round(1) %}
+<div class="card" style="margin-bottom: 1.25rem; padding: 1rem 1.25rem;">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.6rem;">
+    <span style="font-size:0.8rem; font-weight:700; color:var(--navy);">Validation Progress</span>
+    <span style="font-size:0.75rem; color:var(--text-muted);">{{ stats.approved }} of {{ stats.total }} submissions validated</span>
+  </div>
+  <div style="display:flex; height:10px; border-radius:6px; overflow:hidden; background:var(--bg-card); gap:2px;">
+    <div style="width:{{ approved_pct }}%; background:#22c55e;" title="Approved: {{ approved_pct }}%"></div>
+    <div style="width:{{ pending_pct }}%; background:#f59e0b;" title="Pending: {{ pending_pct }}%"></div>
+    <div style="width:{{ rejected_pct }}%; background:#ef4444;" title="Rejected: {{ rejected_pct }}%"></div>
+  </div>
+  <div style="display:flex; gap:1.5rem; margin-top:0.5rem;">
+    <span style="font-size:0.7rem; color:#166534;">● Approved {{ approved_pct }}%</span>
+    <span style="font-size:0.7rem; color:#92400e;">● Pending {{ pending_pct }}%</span>
+    <span style="font-size:0.7rem; color:#b91c1c;">● Rejected {{ rejected_pct }}%</span>
+  </div>
+</div>
+{% endif %}
+
+<!-- Filters -->
+<form class="filters-bar" method="GET" style="flex-wrap:wrap; gap:0.6rem; margin-bottom:1.25rem;">
+  <input type="text" name="q" placeholder="Search faculty or document..." value="{{ request.args.get('q', '') }}" style="min-width:200px; flex:1;">
   <select name="status">
     <option value="">All Status</option>
-    <option value="pending" {% if request.args.get('status')=='pending' %}selected{% endif %}>Pending</option>
+    <option value="pending"  {% if request.args.get('status')=='pending'  %}selected{% endif %}>Pending</option>
     <option value="approved" {% if request.args.get('status')=='approved' %}selected{% endif %}>Approved</option>
     <option value="rejected" {% if request.args.get('status')=='rejected' %}selected{% endif %}>Rejected</option>
   </select>
@@ -22,39 +85,105 @@
     <option value="{{ k }}" {% if request.args.get('kra')==k %}selected{% endif %}>{{ k }}</option>
     {% endfor %}
   </select>
+  <select name="compliance">
+    <option value="">All Compliance</option>
+    <option value="compliant"     {% if request.args.get('compliance')=='compliant'     %}selected{% endif %}>Compliant</option>
+    <option value="non_compliant" {% if request.args.get('compliance')=='non_compliant' %}selected{% endif %}>Non-Compliant</option>
+    <option value="under_review"  {% if request.args.get('compliance')=='under_review'  %}selected{% endif %}>Under Review</option>
+    <option value="pending"       {% if request.args.get('compliance')=='pending'       %}selected{% endif %}>Pending</option>
+  </select>
   <button type="submit" class="btn btn-primary">Filter</button>
+  {% if request.args %}
+  <a href="{{ url_for('admin_submissions') }}" class="btn btn-secondary">Clear</a>
+  {% endif %}
 </form>
 
+<!-- Submissions Table -->
 <div class="card">
+  <div class="card-header" style="margin-bottom:0.75rem;">
+    <h3>Submission Records</h3>
+    <span style="font-size:0.8rem; color:var(--text-muted);">{{ submissions|length }} result{{ 's' if submissions|length != 1 }}</span>
+  </div>
   <div class="data-table-wrap">
     <table class="data-table">
       <thead>
         <tr>
+          <th>#</th>
           <th>Faculty</th>
           <th>Document</th>
           <th>KRA</th>
-          <th>Status</th>
+          <th>Review Status</th>
           <th>Compliance</th>
-          <th>OCR %</th>
-          <th>Reviewer</th>
+          <th>OCR Confidence</th>
+          <th>Assigned Reviewer</th>
           <th>Submitted</th>
+          <th>Last Updated</th>
         </tr>
       </thead>
       <tbody>
         {% for s in submissions %}
         <tr>
-          <td><strong>{{ s.faculty_name }}</strong><br><small>{{ s.faculty_email }}</small></td>
-          <td>{{ s.document_title }}</td>
-          <td>{{ s.kra_type }}</td>
+          <td style="color:var(--text-light); font-size:0.75rem;">{{ s.id }}</td>
+          <td>
+            <strong>{{ s.faculty_name }}</strong>
+            {% if s.faculty_email %}
+            <br><small style="color:var(--text-muted);">{{ s.faculty_email }}</small>
+            {% endif %}
+          </td>
+          <td style="max-width:220px;">
+            <span style="font-size:0.85rem;">{{ s.document_title }}</span>
+          </td>
+          <td>
+            {% if s.kra_type %}
+            <span class="kra-tag kra-{{ s.kra_type | lower | replace(' ', '-') }}">{{ s.kra_type }}</span>
+            {% else %}—{% endif %}
+          </td>
           <td>{{ status_badge(s.status) }}</td>
           <td>{{ status_badge(s.compliance_status) }}</td>
-          <td>{{ '%.1f'|format(s.ocr_confidence) }}%</td>
-          <td>{{ s.reviewer_name or 'Unassigned' }}</td>
-          <td>{{ s.submitted_at }}</td>
+          <td>
+            <div style="display:flex; align-items:center; gap:0.5rem;">
+              <div class="ocr-bar-wrap">
+                <div class="ocr-bar-fill {% if s.ocr_confidence >= 80 %}ocr-high{% elif s.ocr_confidence >= 60 %}ocr-mid{% else %}ocr-low{% endif %}"
+                     style="width:{{ [s.ocr_confidence, 100]|min }}%"></div>
+              </div>
+              <span style="font-size:0.78rem; font-weight:600; min-width:38px;
+                color:{% if s.ocr_confidence >= 80 %}#166534{% elif s.ocr_confidence >= 60 %}#92400e{% else %}#b91c1c{% endif %};">
+                {{ '%.1f'|format(s.ocr_confidence) }}%
+              </span>
+            </div>
+          </td>
+          <td>
+            {% if s.reviewer_name %}
+            <span style="font-size:0.85rem;">{{ s.reviewer_name }}</span>
+            {% else %}
+            <span style="color:#b91c1c; font-size:0.78rem; font-weight:600;">
+              ⚠ Unassigned
+            </span>
+            {% endif %}
+          </td>
+          <td style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">
+            {{ s.submitted_at[:10] if s.submitted_at else '—' }}
+          </td>
+          <td style="font-size:0.78rem; color:var(--text-muted); white-space:nowrap;">
+            {{ s.updated_at[:10] if s.updated_at else '—' }}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="10" style="text-align:center; padding:2rem; color:var(--text-muted);">
+            No submissions found matching your filters.
+          </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
+</div>
+
+<!-- DBM-CHED Notice -->
+<div style="margin-top:1rem; padding:0.75rem 1rem; background:#eff6ff; border:1px solid #bfdbfe;
+            border-radius:8px; font-size:0.78rem; color:#1e40af; display:flex; gap:0.5rem; align-items:flex-start;">
+  <span>ℹ</span>
+  <span>Administrators monitor and supervise the evaluation workflow. Document validation and evaluation decisions remain the responsibility of assigned reviewers in accordance with the DBM–CHED Joint Circular requirements.</span>
 </div>
 {% endblock %}
