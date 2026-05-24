@@ -33,6 +33,15 @@ function initCharts() {
   fetch('/api/chart-data')
     .then(r => r.json())
     .then(data => {
+      if (!data.labels || data.labels.length === 0) {
+        const container = canvas.parentElement;
+        canvas.style.display = 'none';
+        const msg = document.createElement('p');
+        msg.textContent = 'No submission data yet.';
+        msg.style.cssText = 'text-align:center;color:#94a3b8;padding:2rem 0;font-size:0.9rem;';
+        container.appendChild(msg);
+        return;
+      }
       new Chart(canvas, {
         type: 'bar',
         data: {
@@ -41,7 +50,7 @@ function initCharts() {
             label: 'Submissions',
             data: data.data,
             backgroundColor: data.labels.map((_, i) =>
-              i === 3 ? '#002D4F' : '#c5d4e3'
+              i === data.labels.length - 1 ? '#002D4F' : '#c5d4e3'
             ),
             borderRadius: 4,
             borderSkipped: false,

@@ -1,7 +1,98 @@
 import json
 import sqlite3
+from datetime import date, datetime
 from werkzeug.security import generate_password_hash, check_password_hash
-from config import DATABASE
+from config import DATABASE, DATABASE_URL
+
+try:
+    import psycopg
+except ImportError:  # PostgreSQL is optional until DATABASE_URL is configured.
+    psycopg = None
+
+
+def using_postgres():
+    return bool(DATABASE_URL)
+
+
+def _sql(sql):
+    if not using_postgres():
+        return sql
+    return (
+        sql.replace("?", "%s")
+        .replace("datetime('now', '-1 hour')", "CURRENT_TIMESTAMP - INTERVAL '1 hour'")
+        .replace("datetime('now', '-6 hours')", "CURRENT_TIMESTAMP - INTERVAL '6 hours'")
+        .replace("datetime('now')", "CURRENT_TIMESTAMP")
+        .replace("strftime('%Y-%m', submitted_at)", "to_char(submitted_at, 'YYYY-MM')")
+        .replace("INSERT OR IGNORE INTO system_config (key, value) VALUES (%s, %s)",
+                 "INSERT INTO system_config (key, value) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING")
+        .replace("INSERT OR REPLACE INTO system_config (key, value) VALUES (%s, %s)",
+                 "INSERT INTO system_config (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value")
+    )
+
+
+class PgRow(dict):
+    def __init__(self, columns, values):
+        normalized = [
+            value.isoformat(sep=" ") if isinstance(value, datetime)
+            else value.isoformat() if isinstance(value, date)
+            else value
+            for value in values
+        ]
+        super().__init__(zip(columns, normalized))
+        self._values = tuple(normalized)
+
+    def __getitem__(self, key):
+        if isinstance(key, int):
+            return self._values[key]
+        return super().__getitem__(key)
+
+
+class PgCursor:
+    def __init__(self, cursor):
+        self.cursor = cursor
+
+    def execute(self, sql, params=None):
+        self.cursor.execute(_sql(sql), params)
+        return self
+
+    def executescript(self, script):
+        for statement in script.split(";"):
+            statement = statement.strip()
+            if statement:
+                self.execute(statement)
+        return self
+
+    def fetchone(self):
+        row = self.cursor.fetchone()
+        if row is None:
+            return None
+        columns = [col.name for col in self.cursor.description]
+        return PgRow(columns, row)
+
+    def fetchall(self):
+        rows = self.cursor.fetchall()
+        columns = [col.name for col in self.cursor.description]
+        return [PgRow(columns, row) for row in rows]
+
+
+class PgConnection:
+    def __init__(self, conn):
+        self.conn = conn
+
+    def execute(self, sql, params=None):
+        return PgCursor(self.conn.cursor()).execute(sql, params)
+
+    def executescript(self, script):
+        return PgCursor(self.conn.cursor()).executescript(script)
+
+    def cursor(self):
+        return PgCursor(self.conn.cursor())
+
+    def commit(self):
+        self.conn.commit()
+
+    def close(self):
+        self.conn.close()
 
 STANDARD_KRA_DEFINITIONS = [
     {
@@ -120,6 +211,11 @@ STANDARD_KRA_DEFINITIONS = [
 
 
 def _new_connection():
+    if using_postgres():
+        if psycopg is None:
+            raise RuntimeError("psycopg is not installed. Run: python -m pip install -r requirements.txt")
+        conn = psycopg.connect(DATABASE_URL)
+        return PgConnection(conn)
     conn = sqlite3.connect(DATABASE, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
@@ -151,6 +247,8 @@ def close_db(_exc=None):
 
 def migrate_faculty_role(conn):
     """Allow faculty role on existing databases created before the role was added."""
+    if using_postgres():
+        return
     row = conn.execute(
         "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
     ).fetchone()
@@ -175,7 +273,15 @@ def migrate_faculty_role(conn):
 
 def migrate_kra_rules_extended(conn):
     """Add NBC 461 configuration columns and ensure standard KRAs exist."""
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(kra_rules)").fetchall()}
+    if using_postgres():
+        cols = {
+            row["column_name"]
+            for row in conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'kra_rules'"
+            ).fetchall()
+        }
+    else:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(kra_rules)").fetchall()}
     new_cols = [
         ("kra_slug", "TEXT"),
         ("description", "TEXT"),
@@ -255,7 +361,67 @@ def migrate_kra_rules_extended(conn):
 def init_db():
     conn = _new_connection()
     c = conn.cursor()
-    c.executescript("""
+    if using_postgres():
+        c.executescript("""
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            email TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            full_name TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'reviewer', 'faculty')),
+            active INTEGER DEFAULT 1,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS submissions (
+            id SERIAL PRIMARY KEY,
+            faculty_name TEXT NOT NULL,
+            faculty_email TEXT,
+            document_title TEXT NOT NULL,
+            kra_type TEXT,
+            status TEXT DEFAULT 'pending',
+            compliance_status TEXT DEFAULT 'pending',
+            ocr_confidence REAL DEFAULT 0,
+            ocr_text TEXT,
+            reviewer_id INTEGER REFERENCES users(id),
+            reviewer_comments TEXT,
+            submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            title TEXT NOT NULL,
+            message TEXT,
+            type TEXT DEFAULT 'info',
+            read INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER REFERENCES users(id),
+            action TEXT NOT NULL,
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS kra_rules (
+            id SERIAL PRIMARY KEY,
+            kra_name TEXT NOT NULL,
+            weight REAL DEFAULT 0,
+            min_score REAL DEFAULT 0,
+            validation_rules TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS system_config (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+        """)
+    else:
+        c.executescript("""
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             email TEXT UNIQUE NOT NULL,
@@ -355,6 +521,16 @@ def seed_data(conn):
             "INSERT INTO users (email, password_hash, full_name, role) VALUES (?, ?, ?, ?)",
             (email, generate_password_hash(pwd), name, role),
         )
+    reviewer = c.execute(
+        "SELECT id FROM users WHERE email = ?",
+        ("reviewer@university.edu",),
+    ).fetchone()
+    reviewer_id = reviewer["id"] if reviewer else None
+    admin = c.execute(
+        "SELECT id FROM users WHERE email = ?",
+        ("admin@university.edu",),
+    ).fetchone()
+    admin_id = admin["id"] if admin else None
 
     submissions = [
         ("Dr. Elena Reyes", "elena.reyes@university.edu", "Research Publication Portfolio 2025", "Research", "pending", "under_review", 87.5),
@@ -376,7 +552,7 @@ def seed_data(conn):
                (faculty_name, faculty_email, document_title, kra_type, status,
                 compliance_status, ocr_confidence, ocr_text, reviewer_id)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (name, email, title, kra, status, compliance, conf, ocr_samples[i], 2 if i % 2 == 0 else None),
+            (name, email, title, kra, status, compliance, conf, ocr_samples[i], reviewer_id if i % 2 == 0 else None),
         )
 
     notifications = [
@@ -421,17 +597,23 @@ def seed_data(conn):
         ("auto_score_enabled", "1"),
         ("reviewer_validation_required", "1"),
     ]:
-        c.execute(
-            "INSERT INTO system_config (key, value) VALUES (?, ?)",
-            (key, value),
-        )
+        if using_postgres():
+            c.execute(
+                "INSERT INTO system_config (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING",
+                (key, value),
+            )
+        else:
+            c.execute(
+                "INSERT INTO system_config (key, value) VALUES (?, ?)",
+                (key, value),
+            )
 
     logs = [
-        (1, "Document Validated", "Research portfolio approved for Dr. Elena Reyes"),
-        (1, "New Faculty Registered", "Prof. Anna Cruz added to archive"),
-        (2, "Submission Reviewed", "Extension report validated"),
-        (1, "Archive Sync Complete", "Academic archive v2.4 synchronized"),
-        (1, "Rule Updated", "KRA Research weight adjusted to 30%"),
+        (admin_id, "Document Validated", "Research portfolio approved for Dr. Elena Reyes"),
+        (admin_id, "New Faculty Registered", "Prof. Anna Cruz added to archive"),
+        (reviewer_id, "Submission Reviewed", "Extension report validated"),
+        (admin_id, "Archive Sync Complete", "Academic archive v2.4 synchronized"),
+        (admin_id, "Rule Updated", "KRA Research weight adjusted to 30%"),
     ]
     for uid, action, details in logs:
         c.execute(
@@ -471,7 +653,15 @@ def auto_notify(title, message, category="info"):
 
 def migrate_notifications_category(conn):
     """Add category column to notifications if missing."""
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(notifications)").fetchall()}
+    if using_postgres():
+        cols = {
+            row["column_name"]
+            for row in conn.execute(
+                "SELECT column_name FROM information_schema.columns WHERE table_name = 'notifications'"
+            ).fetchall()
+        }
+    else:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(notifications)").fetchall()}
     if "category" not in cols:
         conn.execute("ALTER TABLE notifications ADD COLUMN category TEXT DEFAULT 'info'")
         conn.execute("UPDATE notifications SET category = type")

@@ -139,6 +139,42 @@
       </div>
       {% endif %}
     </div>
+
+    {% if awaiting %}
+    <div class="card rv-pending-card" style="margin-top:1rem;">
+      <div class="card-header">
+        <h3>Awaiting Submission</h3>
+        <span style="font-size:0.8rem;color:var(--text-muted);">Faculty assigned but no document yet</span>
+      </div>
+      <div class="rv-pending-scroll">
+        <table class="rv-pending-table">
+          <thead>
+            <tr>
+              <th>Faculty</th>
+              <th>Email</th>
+              <th>Assigned</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in awaiting %}
+            <tr>
+              <td>
+                <div class="rv-fc">
+                  <span class="rv-fc__avatar">{{ s.faculty_name[:1] }}</span>
+                  <span class="rv-fc__name">{{ s.faculty_name }}</span>
+                </div>
+              </td>
+              <td class="rv-muted">{{ s.faculty_email or '—' }}</td>
+              <td class="rv-muted">{{ s.submitted_at[:10] if s.submitted_at else '—' }}</td>
+              <td><span class="rv-workload-badge" style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:4px;font-size:0.75rem;">No submission</span></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
   </div>
 
   <!-- ── Right sidebar ── -->

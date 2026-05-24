@@ -32,6 +32,25 @@ Keep the terminal open while you use the app. Press `Ctrl+C` to stop the server.
 - Works without internet after Flask is installed once.
 - Charts, CSS, JS, and the logo are served from the `static/` folder (no CDN).
 
+## PostgreSQL database
+
+By default, FacultyLink still uses the local `facultylink.db` SQLite file.
+To use PostgreSQL instead, set `DATABASE_URL` before starting the app:
+
+```powershell
+$env:DATABASE_URL="postgresql://postgres:your_password@localhost:5432/facultylink"
+python -m pip install -r requirements.txt
+python app.py
+```
+
+Create the PostgreSQL database first, for example:
+
+```sql
+CREATE DATABASE facultylink;
+```
+
+On first run, the app creates the tables and demo accounts in PostgreSQL.
+
 ## Troubleshooting
 
 **This site cant be reached** the server is not running. Run `run.bat` or `python app.py` first.

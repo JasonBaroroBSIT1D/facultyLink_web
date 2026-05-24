@@ -348,14 +348,20 @@
     {% for s in unassigned %}
     <div class="ra-doc-item ra-doc-item--unassigned" data-status="{{ s.status }}" data-kra="{{ s.kra_type or '' }}">
       <span class="ra-doc-item__icon" aria-hidden="true">
+        {% if s.get('_no_submission') %}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+        {% else %}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
           <polyline points="14 2 14 8 20 8"/>
         </svg>
+        {% endif %}
       </span>
       <div class="ra-doc-item__info">
         <span class="ra-doc-item__faculty-label">{{ s.faculty_name }}</span>
-        <span class="ra-doc-item__title">{{ s.document_title }}</span>
+        <span class="ra-doc-item__title" style="{{ 'color:var(--text-muted,#aaa);font-style:italic;' if s.get('_no_submission') }}">{{ s.document_title }}</span>
         <div class="ra-doc-item__meta">
           {% if s.kra_type %}
           <span class="kra-tag kra-{{ kra_slug(s.kra_type) }}">{{ s.kra_type }}</span>
@@ -363,8 +369,28 @@
           <span class="ra-doc-item__date">{{ s.submitted_at[:10] if s.submitted_at else '—' }}</span>
         </div>
       </div>
-      <div class="ra-doc-item__status">{{ status_badge(s.status) }}</div>
+      <div class="ra-doc-item__status">
+        {% if s.get('_no_submission') %}
+        <span class="ra-workload-badge" style="background:#f1f5f9;color:#64748b;">No submission</span>
+        {% else %}
+        {{ status_badge(s.status) }}
+        {% endif %}
+      </div>
       <div class="ra-doc-item__actions">
+        {% if s.get('_no_submission') %}
+        <form method="POST" class="ra-reassign-form">
+          <input type="hidden" name="create_placeholder" value="1">
+          <input type="hidden" name="faculty_name" value="{{ s.faculty_name }}">
+          <input type="hidden" name="faculty_email" value="{{ s.faculty_email }}">
+          <select name="reviewer_id" class="ra-reassign-select" required aria-label="Assign reviewer">
+            <option value="">Select reviewer…</option>
+            {% for r in reviewers %}
+            <option value="{{ r.id }}">{{ r.full_name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-sm btn-primary">Assign</button>
+        </form>
+        {% else %}
         <form method="POST" class="ra-reassign-form">
           <input type="hidden" name="submission_id" value="{{ s.id }}">
           <select name="reviewer_id" class="ra-reassign-select" required aria-label="Assign reviewer">
@@ -375,6 +401,7 @@
           </select>
           <button type="submit" class="btn btn-sm btn-primary">Assign</button>
         </form>
+        {% endif %}
       </div>
     </div>
     {% endfor %}

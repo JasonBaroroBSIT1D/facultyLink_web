@@ -114,7 +114,7 @@ def admin_dashboard():
     _check_and_generate_auto_notifications()
     conn = get_db()
     stats = {
-        "faculty": conn.execute("SELECT COUNT(DISTINCT faculty_email) FROM submissions").fetchone()[0],
+        "faculty": conn.execute("SELECT COUNT(*) FROM users WHERE role='faculty' AND active=1").fetchone()[0],
         "reviewers": conn.execute("SELECT COUNT(*) FROM users WHERE role='reviewer' AND active=1").fetchone()[0],
         "documents": conn.execute("SELECT COUNT(*) FROM submissions").fetchone()[0],
         "pending": conn.execute("SELECT COUNT(*) FROM submissions WHERE status='pending'").fetchone()[0],
@@ -129,6 +129,17 @@ def admin_dashboard():
     ).fetchall()
     rules = fetch_kra_rules(conn)
     kra_scores = _scores_from_submissions(conn, rules)
+    settings = get_system_config(conn)
+    promotion_min = float(settings.get("promotion_min_total_score", 75))
+    promotable = conn.execute(
+        "SELECT COUNT(*) FROM submissions WHERE status='approved'"
+    ).fetchone()[0]
+    instructor_to_asst = conn.execute(
+        "SELECT COUNT(*) FROM submissions WHERE status='approved' AND kra_type='Instruction'"
+    ).fetchone()[0]
+    asst_to_assoc = conn.execute(
+        "SELECT COUNT(*) FROM submissions WHERE status='approved' AND kra_type='Research'"
+    ).fetchone()[0]
     return render_template(
         "admin/dashboard.html",
         stats=stats,
@@ -136,6 +147,9 @@ def admin_dashboard():
         activity=[dict(a) for a in activity],
         kra=[rule_to_dict(r) for r in rules],
         kra_scores=kra_scores,
+        promotable=promotable,
+        instructor_to_asst=instructor_to_asst,
+        asst_to_assoc=asst_to_assoc,
     )
 
 
@@ -703,6 +717,29 @@ def admin_reviewer_assignment():
     if request.method == "POST":
         sub_id = request.form.get("submission_id")
         rev_id = request.form.get("reviewer_id") or None
+
+        # Create a placeholder submission for faculty with no submission yet
+        if request.form.get("create_placeholder") and rev_id:
+            fname = request.form.get("faculty_name", "").strip()
+            femail = request.form.get("faculty_email", "").strip()
+            conn.execute(
+                """INSERT INTO submissions
+                   (faculty_name, faculty_email, document_title, kra_type, status, compliance_status, reviewer_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (fname, femail, "Pending Submission", None, "pending", "pending", rev_id),
+            )
+            conn.commit()
+            rev_row = conn.execute("SELECT full_name FROM users WHERE id=?", (rev_id,)).fetchone()
+            if rev_row:
+                auto_notify(
+                    "Reviewer Assigned",
+                    f"{rev_row['full_name']} assigned to {fname} (awaiting submission).",
+                    "info",
+                )
+            log_action(g.user["id"], "Reviewer Assigned", f"{fname} → Reviewer #{rev_id} (placeholder)")
+            flash(f"Reviewer assigned to {fname}. A placeholder submission was created.", "success")
+            return redirect(url_for("admin_reviewer_assignment"))
+
         if sub_id:
             conn.execute(
                 "UPDATE submissions SET reviewer_id=?, updated_at=datetime('now') WHERE id=?",
@@ -787,6 +824,27 @@ def admin_reviewer_assignment():
                 fg[fname][status] += 1
         else:
             unassigned.append(s)
+
+    # Also include faculty users who have no submissions yet
+    faculty_users = conn.execute(
+        "SELECT full_name, email FROM users WHERE role='faculty' AND active=1 ORDER BY full_name"
+    ).fetchall()
+    submitted_emails = {s["faculty_email"] for s in all_subs if s.get("faculty_email")}
+    submitted_names  = {s["faculty_name"] for s in all_subs}
+    for fu in faculty_users:
+        if fu["email"] not in submitted_emails and fu["full_name"] not in submitted_names:
+            unassigned.append({
+                "id": None,
+                "faculty_name": fu["full_name"],
+                "faculty_email": fu["email"],
+                "document_title": "No submission yet",
+                "kra_type": None,
+                "status": "pending",
+                "submitted_at": None,
+                "reviewer_id": None,
+                "ocr_confidence": None,
+                "_no_submission": True,
+            })
 
     # Finalise folders — convert faculty_groups dict to sorted list
     folders = []
@@ -902,7 +960,14 @@ def reviewer_dashboard():
     }
     pending = conn.execute(
         """SELECT * FROM submissions WHERE status='pending'
-           AND (reviewer_id=? OR reviewer_id IS NULL) ORDER BY submitted_at DESC LIMIT 5""",
+           AND (reviewer_id=? OR reviewer_id IS NULL)
+           AND (is_placeholder IS NULL OR is_placeholder=0)
+           ORDER BY submitted_at DESC LIMIT 5""",
+        (uid,),
+    ).fetchall()
+    awaiting = conn.execute(
+        """SELECT * FROM submissions WHERE reviewer_id=? AND is_placeholder=1
+           ORDER BY submitted_at DESC""",
         (uid,),
     ).fetchall()
     notifications = conn.execute(
@@ -915,13 +980,15 @@ def reviewer_dashboard():
     ).fetchall()
     kra_stats = conn.execute(
         """SELECT kra_type, COUNT(*) as cnt FROM submissions
-           WHERE reviewer_id=? GROUP BY kra_type""",
+           WHERE reviewer_id=? AND (is_placeholder IS NULL OR is_placeholder=0)
+           GROUP BY kra_type""",
         (uid,),
     ).fetchall()
     return render_template(
         "reviewer/dashboard.html",
         stats=stats,
         pending=[dict(p) for p in pending],
+        awaiting=[dict(a) for a in awaiting],
         notifications=[dict(n) for n in notifications],
         activity=[dict(a) for a in activity],
         kra_stats=[dict(k) for k in kra_stats],
@@ -1224,9 +1291,22 @@ def reviewer_analytics():
 @login_required()
 def chart_data():
     conn = get_db()
-    months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul"]
-    counts = [120, 145, 132, 198, 167, 189, 210]
-    return jsonify({"labels": months, "data": counts})
+    rows = conn.execute(
+        """SELECT to_char(submitted_at, 'Mon') as month,
+                  EXTRACT(MONTH FROM submitted_at) as month_num,
+                  COUNT(*) as cnt
+           FROM submissions
+           WHERE submitted_at >= CURRENT_TIMESTAMP - INTERVAL '6 months'
+           GROUP BY month, month_num
+           ORDER BY month_num"""
+    ).fetchall()
+    if rows:
+        labels = [r["month"] for r in rows]
+        data   = [r["cnt"] for r in rows]
+    else:
+        labels = []
+        data   = []
+    return jsonify({"labels": labels, "data": data})
 
 
 if __name__ == "__main__":
