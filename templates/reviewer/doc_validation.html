@@ -1,0 +1,143 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Document Validation — FacultyLink{% endblock %}
+{% set active_page = 'validation' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<div class="page-header-row">
+  <div>
+    <h1 class="page-title">Document Validation</h1>
+    <p class="page-subtitle">DBM–CHED Joint Circular compliance checks for all submitted documents</p>
+  </div>
+</div>
+
+<!-- Validation summary cards -->
+<div class="rv-stats-row">
+  <div class="rv-stat-card">
+    <div class="rv-stat-card__icon rv-stat-card__icon--blue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.total }}</span>
+      <span class="rv-stat-card__label">Total Documents</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--success">
+    <div class="rv-stat-card__icon rv-stat-card__icon--green">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.compliant }}</span>
+      <span class="rv-stat-card__label">Compliant</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--danger">
+    <div class="rv-stat-card__icon rv-stat-card__icon--red">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.non_compliant }}</span>
+      <span class="rv-stat-card__label">Non-Compliant</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--warn">
+    <div class="rv-stat-card__icon rv-stat-card__icon--amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.under_review }}</span>
+      <span class="rv-stat-card__label">Under Review</span>
+    </div>
+  </div>
+</div>
+
+<!-- DBM-CHED Requirements Reference -->
+<div class="card" style="margin-bottom:1.25rem;">
+  <div class="card-header">
+    <h3>DBM–CHED Joint Circular Requirements</h3>
+    <span class="rv-ocr-engine-badge">NBC 461 Reference</span>
+  </div>
+  <div class="rv-requirements-grid">
+    {% for req in requirements %}
+    <div class="rv-req-item">
+      <div class="rv-req-item__icon {% if req.met %}rv-req-item__icon--pass{% else %}rv-req-item__icon--fail{% endif %}">
+        {% if req.met %}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        {% else %}
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        {% endif %}
+      </div>
+      <div>
+        <div class="rv-req-item__label">{{ req.label }}</div>
+        <div class="rv-req-item__count">{{ req.count }} document(s)</div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Submissions table -->
+<div class="card">
+  <div class="card-header">
+    <h3>Document Validation Queue</h3>
+    <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-sm btn-secondary">View All Submissions</a>
+  </div>
+  {% if submissions %}
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Faculty</th>
+          <th>Document</th>
+          <th>KRA</th>
+          <th>Compliance</th>
+          <th>OCR Score</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in submissions %}
+        <tr>
+          <td>
+            <div class="rv-faculty-cell">
+              <span class="rv-avatar">{{ s.faculty_name[:1] }}</span>
+              <div>
+                <div class="rv-faculty-cell__name">{{ s.faculty_name }}</div>
+                {% if s.faculty_email %}<div class="rv-cell-sub">{{ s.faculty_email }}</div>{% endif %}
+              </div>
+            </div>
+          </td>
+          <td><span class="rv-doc-title">{{ s.document_title }}</span></td>
+          <td><span class="kra-tag kra-{{ s.kra_type | lower | replace(' ','-') | replace(',','') | replace('/','') | replace('&','') }}">{{ s.kra_type or '—' }}</span></td>
+          <td><span class="status-tag status-{{ s.compliance_status }}">{{ s.compliance_status | replace('_',' ') | title }}</span></td>
+          <td>
+            {% set conf = s.ocr_confidence | float %}
+            <div class="rv-ocr-cell">
+              <div class="rv-ocr-bar">
+                <div class="rv-ocr-bar__fill {% if conf >= 80 %}rv-ocr-bar__fill--high{% elif conf >= 60 %}rv-ocr-bar__fill--mid{% else %}rv-ocr-bar__fill--low{% endif %}" style="width:{{ [conf,100]|min }}%"></div>
+              </div>
+              <span class="rv-ocr-pct {% if conf >= 80 %}rv-ocr-pct--high{% elif conf >= 60 %}rv-ocr-pct--mid{% else %}rv-ocr-pct--low{% endif %}">{{ '%.0f'|format(conf) }}%</span>
+            </div>
+          </td>
+          <td>{{ status_badge(s.status) }}</td>
+          <td>
+            <div class="rv-action-group">
+              <a href="{{ url_for('reviewer_ocr', sub_id=s.id) }}" class="btn btn-sm btn-secondary">Validate</a>
+              <a href="{{ url_for('reviewer_review', sub_id=s.id) }}" class="btn btn-sm btn-primary">Review</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="rv-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    <p>All documents have been validated.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

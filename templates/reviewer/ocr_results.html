@@ -1,0 +1,118 @@
+{% extends "base_dashboard.html" %}
+{% block title %}OCR Results — FacultyLink{% endblock %}
+{% set active_page = 'ocr_results' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<div class="page-header-row">
+  <div>
+    <h1 class="page-title">OCR Results</h1>
+    <p class="page-subtitle">Optical character recognition confidence scores and extracted text overview</p>
+  </div>
+</div>
+
+<!-- OCR summary cards -->
+<div class="rv-stats-row">
+  <div class="rv-stat-card rv-stat-card--success">
+    <div class="rv-stat-card__icon rv-stat-card__icon--green">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.high_conf }}</span>
+      <span class="rv-stat-card__label">High Confidence (≥80%)</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--warn">
+    <div class="rv-stat-card__icon rv-stat-card__icon--amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.mid_conf }}</span>
+      <span class="rv-stat-card__label">Review Needed (60–79%)</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--danger">
+    <div class="rv-stat-card__icon rv-stat-card__icon--red">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.low_conf }}</span>
+      <span class="rv-stat-card__label">Manual Check (&lt;60%)</span>
+    </div>
+  </div>
+  <div class="rv-stat-card">
+    <div class="rv-stat-card__icon rv-stat-card__icon--blue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h3v3H7z"/><path d="M14 7h3v3h-3z"/><path d="M7 14h3v3H7z"/><path d="M14 14h3v3h-3z"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ '%.1f'|format(stats.avg_conf) }}%</span>
+      <span class="rv-stat-card__label">Average Confidence</span>
+    </div>
+  </div>
+</div>
+
+<!-- OCR results table -->
+<div class="card">
+  <div class="card-header">
+    <h3>All OCR Scan Results</h3>
+  </div>
+  {% if submissions %}
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Faculty</th>
+          <th>Document</th>
+          <th>KRA</th>
+          <th>OCR Confidence</th>
+          <th>Readability</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in submissions %}
+        {% set conf = s.ocr_confidence | float %}
+        <tr>
+          <td>
+            <div class="rv-faculty-cell">
+              <span class="rv-avatar">{{ s.faculty_name[:1] }}</span>
+              <div>
+                <div class="rv-faculty-cell__name">{{ s.faculty_name }}</div>
+                {% if s.faculty_email %}<div class="rv-cell-sub">{{ s.faculty_email }}</div>{% endif %}
+              </div>
+            </div>
+          </td>
+          <td><span class="rv-doc-title">{{ s.document_title }}</span></td>
+          <td><span class="kra-tag kra-{{ s.kra_type | lower | replace(' ','-') | replace(',','') | replace('/','') | replace('&','') }}">{{ s.kra_type or '—' }}</span></td>
+          <td>
+            <div class="rv-ocr-cell">
+              <div class="rv-ocr-bar">
+                <div class="rv-ocr-bar__fill {% if conf >= 80 %}rv-ocr-bar__fill--high{% elif conf >= 60 %}rv-ocr-bar__fill--mid{% else %}rv-ocr-bar__fill--low{% endif %}" style="width:{{ [conf,100]|min }}%"></div>
+              </div>
+              <span class="rv-ocr-pct {% if conf >= 80 %}rv-ocr-pct--high{% elif conf >= 60 %}rv-ocr-pct--mid{% else %}rv-ocr-pct--low{% endif %}">{{ '%.0f'|format(conf) }}%</span>
+            </div>
+          </td>
+          <td>
+            <span class="status-tag {% if conf >= 80 %}status-approved{% elif conf >= 60 %}status-under_review{% else %}status-rejected{% endif %}">
+              {% if conf >= 80 %}High{% elif conf >= 60 %}Acceptable{% else %}Low{% endif %}
+            </span>
+          </td>
+          <td>{{ status_badge(s.status) }}</td>
+          <td>
+            <a href="{{ url_for('reviewer_ocr', sub_id=s.id) }}" class="btn btn-sm btn-primary">View OCR</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="rv-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+    <p>No OCR results available.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

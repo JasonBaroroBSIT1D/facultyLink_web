@@ -5,69 +5,257 @@
 {% from 'macros.html' import status_badge %}
 
 {% block content %}
-<h1 class="page-title">Reviewer Dashboard</h1>
-<p class="page-subtitle">Faculty submission review, document validation, and feedback workflow</p>
 
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="label">Assigned Submissions</div>
-    <div class="value">{{ stats.assigned }}</div>
+<!-- Page header -->
+<div class="rv-page-header">
+  <div>
+    <h1 class="page-title">Reviewer Dashboard</h1>
+    <p class="page-subtitle">DBM–CHED Joint Circular · Faculty Rank Evaluation · NBC 461 Compliance</p>
   </div>
-  <div class="stat-card">
-    <div class="label">Pending Review</div>
-    <div class="value">{{ stats.pending }}</div>
-    <span class="badge badge-urgent">ACTION NEEDED</span>
+  <a href="{{ url_for('reviewer_submissions') }}?status=pending" class="btn btn-primary">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+    Start Reviewing
+  </a>
+</div>
+
+<!-- Stat cards -->
+<div class="rv-stats-row">
+  <div class="rv-stat-card">
+    <div class="rv-stat-card__icon rv-stat-card__icon--blue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.assigned }}</span>
+      <span class="rv-stat-card__label">Total Assigned</span>
+    </div>
   </div>
-  <div class="stat-card">
-    <div class="label">Approved</div>
-    <div class="value">{{ stats.approved }}</div>
-    <span class="badge badge-stable">COMPLETE</span>
+  <div class="rv-stat-card rv-stat-card--warn">
+    <div class="rv-stat-card__icon rv-stat-card__icon--amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.pending }}</span>
+      <span class="rv-stat-card__label">Pending Review</span>
+    </div>
+    {% if stats.pending > 0 %}<span class="rv-stat-card__badge">Action needed</span>{% endif %}
   </div>
-  <div class="stat-card">
-    <div class="label">Rejected</div>
-    <div class="value">{{ stats.rejected }}</div>
+  <div class="rv-stat-card rv-stat-card--success">
+    <div class="rv-stat-card__icon rv-stat-card__icon--green">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.approved }}</span>
+      <span class="rv-stat-card__label">Approved</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--danger">
+    <div class="rv-stat-card__icon rv-stat-card__icon--red">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.rejected }}</span>
+      <span class="rv-stat-card__label">Rejected</span>
+    </div>
   </div>
 </div>
 
-<div class="dashboard-grid">
-  <div class="card">
-    <div class="card-header">
-      <h3>Pending Faculty Submissions</h3>
-      <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-sm btn-secondary">View All</a>
+<!-- Main content grid -->
+<div class="rv-dashboard-grid">
+
+  <!-- ── Left: pending table ── -->
+  <div class="rv-dashboard-main">
+    <div class="card rv-pending-card">
+      <div class="card-header">
+        <h3>Pending Faculty Submissions</h3>
+        <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-sm btn-secondary">View All</a>
+      </div>
+      {% if pending %}
+      <div class="rv-pending-scroll">
+        <table class="rv-pending-table">
+          <colgroup>
+            <col style="width:28%">
+            <col style="width:28%">
+            <col style="width:10%">
+            <col style="width:10%">
+            <col style="width:12%">
+            <col style="width:12%">
+          </colgroup>
+          <thead>
+            <tr>
+              <th>Faculty</th>
+              <th>Document</th>
+              <th>KRA</th>
+              <th>Date</th>
+              <th>OCR</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for s in pending %}
+            {% set conf = s.ocr_confidence | float %}
+            <tr>
+              <td>
+                <div class="rv-fc">
+                  <span class="rv-fc__avatar">{{ s.faculty_name[:1] }}</span>
+                  <div class="rv-fc__info">
+                    <span class="rv-fc__name" title="{{ s.faculty_name }}">{{ s.faculty_name }}</span>
+                    {% if s.faculty_email %}<span class="rv-fc__email" title="{{ s.faculty_email }}">{{ s.faculty_email }}</span>{% endif %}
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="rv-dt" title="{{ s.document_title }}">{{ s.document_title }}</span>
+              </td>
+              <td>
+                <span class="kra-tag kra-{{ s.kra_type | lower | replace(' ','-') | replace(',','') | replace('/','') | replace('&','') }}">{{ s.kra_type or '—' }}</span>
+              </td>
+              <td class="rv-muted">{{ s.submitted_at[:10] if s.submitted_at else '—' }}</td>
+              <td>
+                <div class="rv-ocr-cell">
+                  <div class="rv-ocr-bar">
+                    <div class="rv-ocr-bar__fill {% if conf >= 80 %}rv-ocr-bar__fill--high{% elif conf >= 60 %}rv-ocr-bar__fill--mid{% else %}rv-ocr-bar__fill--low{% endif %}" style="width:{{ [conf,100]|min }}%"></div>
+                  </div>
+                  <span class="rv-ocr-pct {% if conf >= 80 %}rv-ocr-pct--high{% elif conf >= 60 %}rv-ocr-pct--mid{% else %}rv-ocr-pct--low{% endif %}">{{ '%.0f'|format(conf) }}%</span>
+                </div>
+              </td>
+              <td>
+                <div class="rv-ag">
+                  <a href="{{ url_for('reviewer_review', sub_id=s.id) }}" class="rv-ag__btn rv-ag__btn--primary" title="Open Review">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    Review
+                  </a>
+                  <a href="{{ url_for('reviewer_ocr', sub_id=s.id) }}" class="rv-ag__btn rv-ag__btn--ghost" title="OCR Report">OCR</a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="rv-empty">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <p>No pending submissions — all caught up!</p>
+      </div>
+      {% endif %}
     </div>
-    <table class="data-table">
-      <thead><tr><th>Faculty</th><th>Document</th><th>KRA</th><th>OCR</th><th>Action</th></tr></thead>
-      <tbody>
-        {% for s in pending %}
-        <tr>
-          <td>{{ s.faculty_name }}</td>
-          <td>{{ s.document_title }}</td>
-          <td>{{ s.kra_type }}</td>
-          <td>{{ '%.1f'|format(s.ocr_confidence) }}%</td>
-          <td>
-            <a href="{{ url_for('reviewer_review', sub_id=s.id) }}" class="btn btn-sm btn-primary">Review</a>
-            <a href="{{ url_for('reviewer_ocr', sub_id=s.id) }}" class="btn btn-sm btn-secondary">OCR</a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
   </div>
 
-  <div class="card">
-    <div class="card-header"><h3>Notifications</h3></div>
-    <ul class="notif-list">
-      {% for n in notifications %}
-      <li>
-        <span class="notif-dot {{ n.type }}"></span>
-        <div>
-          <strong>{{ n.title }}</strong>
-          <p style="font-size:0.8rem;color:var(--text-muted);">{{ n.message }}</p>
-          <span class="time">{{ n.created_at }}</span>
+  <!-- ── Right sidebar ── -->
+  <div class="rv-dashboard-side">
+
+    <!-- Progress ring -->
+    <div class="card rv-progress-card">
+      <div class="card-header"><h3>Review Progress</h3></div>
+      <div class="rv-progress-body">
+        {% set total = stats.assigned | int %}
+        {% set done  = (stats.approved + stats.rejected) | int %}
+        {% set pct   = ((done / total * 100) | round(0) | int) if total > 0 else 0 %}
+        <div class="rv-ring-wrap">
+          <svg class="rv-ring" viewBox="0 0 80 80" aria-hidden="true">
+            <circle class="rv-ring__track" cx="40" cy="40" r="32"/>
+            <circle class="rv-ring__fill" cx="40" cy="40" r="32"
+                    stroke-dasharray="{{ (pct / 100 * 201.06) | round(2) }} 201.06"/>
+          </svg>
+          <div class="rv-ring__label">
+            <span class="rv-ring__pct">{{ pct }}%</span>
+            <span class="rv-ring__sub">complete</span>
+          </div>
         </div>
-      </li>
-      {% endfor %}
-    </ul>
+        <div class="rv-progress-legend">
+          <div class="rv-progress-legend__item">
+            <span class="rv-progress-legend__dot rv-progress-legend__dot--done"></span>
+            <span>Reviewed: <strong>{{ done }}</strong></span>
+          </div>
+          <div class="rv-progress-legend__item">
+            <span class="rv-progress-legend__dot rv-progress-legend__dot--pending"></span>
+            <span>Pending: <strong>{{ stats.pending }}</strong></span>
+          </div>
+          <div class="rv-progress-legend__item">
+            <span class="rv-progress-legend__dot rv-progress-legend__dot--total"></span>
+            <span>Total: <strong>{{ total }}</strong></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- KRA workload -->
+    {% if kra_stats %}
+    <div class="card rv-side-card">
+      <div class="card-header"><h3>KRA Workload</h3></div>
+      <div class="rv-kra-workload">
+        {% for k in kra_stats %}
+        <div class="rv-kra-bar-row">
+          <span class="rv-kra-bar-label" title="{{ k.kra_type }}">{{ k.kra_type }}</span>
+          <div class="rv-kra-bar-track">
+            <div class="rv-kra-bar-fill" style="width:{{ [(k.cnt / (stats.assigned or 1) * 100), 100]|min }}%"></div>
+          </div>
+          <span class="rv-kra-bar-count">{{ k.cnt }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Notifications -->
+    <div class="card rv-side-card">
+      <div class="card-header">
+        <h3>Notifications</h3>
+        {% if notifications %}
+        <span class="rv-badge-count">{{ notifications | length }}</span>
+        {% endif %}
+      </div>
+      {% if notifications %}
+      <div class="rv-notif-feed">
+        {% for n in notifications %}
+        {% set cat = n.category or n.type or 'info' %}
+        <div class="rv-nf-item rv-nf-item--{{ cat }}">
+          <span class="rv-nf-icon rv-nf-icon--{{ cat }}" aria-hidden="true">
+            {% if cat == 'success' %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            {% elif cat == 'warning' or cat == 'reminder' %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            {% elif cat == 'error' or cat == 'urgent' %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            {% else %}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            {% endif %}
+          </span>
+          <div class="rv-nf-body">
+            <span class="rv-nf-title">{{ n.title }}</span>
+            {% if n.message %}<span class="rv-nf-msg">{{ n.message }}</span>{% endif %}
+            <span class="rv-nf-time">{{ n.created_at }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      <a href="{{ url_for('reviewer_notifications') }}" class="rv-side-card__footer-link">View all notifications →</a>
+      {% else %}
+      <p class="rv-empty-inline">No new notifications.</p>
+      {% endif %}
+    </div>
+
+    <!-- Activity log -->
+    {% if activity %}
+    <div class="card rv-side-card">
+      <div class="card-header"><h3>Recent Activity</h3></div>
+      <div class="rv-timeline">
+        {% for a in activity %}
+        <div class="rv-tl-item">
+          <div class="rv-tl-line" aria-hidden="true">
+            <span class="rv-tl-dot"></span>
+          </div>
+          <div class="rv-tl-body">
+            <span class="rv-tl-action">{{ a.action }}</span>
+            {% if a.details %}<span class="rv-tl-detail">{{ a.details }}</span>{% endif %}
+            <span class="rv-tl-time">{{ a.created_at }}</span>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
   </div>
 </div>
 {% endblock %}

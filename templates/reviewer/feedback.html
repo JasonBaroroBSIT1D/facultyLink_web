@@ -1,0 +1,97 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Feedback & Comments — FacultyLink{% endblock %}
+{% set active_page = 'feedback' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<div class="page-header-row">
+  <div>
+    <h1 class="page-title">Feedback &amp; Comments</h1>
+    <p class="page-subtitle">Review all feedback and revision instructions provided to faculty members</p>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="rv-stats-row">
+  <div class="rv-stat-card">
+    <div class="rv-stat-card__icon rv-stat-card__icon--blue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.with_comments }}</span>
+      <span class="rv-stat-card__label">With Feedback</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--danger">
+    <div class="rv-stat-card__icon rv-stat-card__icon--red">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.rejected_with_comments }}</span>
+      <span class="rv-stat-card__label">Rejected w/ Notes</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--warn">
+    <div class="rv-stat-card__icon rv-stat-card__icon--amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.pending_feedback }}</span>
+      <span class="rv-stat-card__label">Awaiting Feedback</span>
+    </div>
+  </div>
+</div>
+
+<!-- Feedback list -->
+<div class="card">
+  <div class="card-header">
+    <h3>Feedback History</h3>
+  </div>
+  {% if submissions %}
+  <div class="rv-feedback-list">
+    {% for s in submissions %}
+    <div class="rv-feedback-item rv-feedback-item--{{ s.status }}">
+      <div class="rv-feedback-item__header">
+        <div class="rv-faculty-cell">
+          <span class="rv-avatar">{{ s.faculty_name[:1] }}</span>
+          <div>
+            <div class="rv-faculty-cell__name">{{ s.faculty_name }}</div>
+            <div class="rv-cell-sub">{{ s.document_title }}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:0.5rem;align-items:center;flex-wrap:wrap;">
+          <span class="kra-tag kra-{{ s.kra_type | lower | replace(' ','-') | replace(',','') | replace('/','') | replace('&','') }}">{{ s.kra_type or '—' }}</span>
+          {{ status_badge(s.status) }}
+          <span class="rv-cell-muted" style="font-size:0.75rem;">{{ s.updated_at[:10] if s.updated_at else '—' }}</span>
+        </div>
+      </div>
+      {% if s.reviewer_comments %}
+      <div class="rv-feedback-item__body">
+        <div class="rv-feedback-item__label">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          Reviewer Feedback
+        </div>
+        <p class="rv-feedback-item__text">{{ s.reviewer_comments }}</p>
+      </div>
+      {% else %}
+      <div class="rv-feedback-item__body rv-feedback-item__body--empty">
+        No feedback provided yet.
+      </div>
+      {% endif %}
+      <div class="rv-feedback-item__footer">
+        <a href="{{ url_for('reviewer_review', sub_id=s.id) }}" class="btn btn-sm btn-primary">
+          {% if s.reviewer_comments %}Update Feedback{% else %}Add Feedback{% endif %}
+        </a>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="rv-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+    <p>No feedback records found.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

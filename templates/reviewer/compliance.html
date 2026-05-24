@@ -1,0 +1,140 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Compliance Monitoring — FacultyLink{% endblock %}
+{% set active_page = 'compliance' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<div class="page-header-row">
+  <div>
+    <h1 class="page-title">Compliance Monitoring</h1>
+    <p class="page-subtitle">Track faculty compliance with DBM–CHED Joint Circular and NBC 461 requirements</p>
+  </div>
+</div>
+
+<!-- Compliance overview cards -->
+<div class="rv-stats-row">
+  <div class="rv-stat-card rv-stat-card--success">
+    <div class="rv-stat-card__icon rv-stat-card__icon--green">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.compliant }}</span>
+      <span class="rv-stat-card__label">Compliant</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--danger">
+    <div class="rv-stat-card__icon rv-stat-card__icon--red">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.non_compliant }}</span>
+      <span class="rv-stat-card__label">Non-Compliant</span>
+    </div>
+  </div>
+  <div class="rv-stat-card rv-stat-card--warn">
+    <div class="rv-stat-card__icon rv-stat-card__icon--amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.under_review }}</span>
+      <span class="rv-stat-card__label">Under Review</span>
+    </div>
+  </div>
+  <div class="rv-stat-card">
+    <div class="rv-stat-card__icon rv-stat-card__icon--blue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+    </div>
+    <div class="rv-stat-card__body">
+      <span class="rv-stat-card__num">{{ stats.pending }}</span>
+      <span class="rv-stat-card__label">Pending Check</span>
+    </div>
+  </div>
+</div>
+
+<!-- Compliance rate bar -->
+<div class="card" style="margin-bottom:1.25rem;">
+  <div class="card-header"><h3>Overall Compliance Rate</h3></div>
+  <div style="padding:0 1.25rem 1.25rem;">
+    {% set total = (stats.compliant + stats.non_compliant + stats.under_review + stats.pending) %}
+    {% set rate = ((stats.compliant / total * 100) | round(1)) if total > 0 else 0 %}
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:0.5rem;">
+      <div style="flex:1;height:12px;background:var(--bg-card);border-radius:6px;overflow:hidden;">
+        <div style="height:100%;width:{{ rate }}%;background:{% if rate >= 75 %}#22c55e{% elif rate >= 50 %}#f59e0b{% else %}#ef4444{% endif %};border-radius:6px;transition:width 0.4s;"></div>
+      </div>
+      <span style="font-size:1.1rem;font-weight:700;color:var(--navy);min-width:3.5rem;text-align:right;">{{ rate }}%</span>
+    </div>
+    <p style="font-size:0.8rem;color:var(--text-muted);">{{ stats.compliant }} of {{ total }} submissions meet DBM–CHED Joint Circular requirements</p>
+  </div>
+</div>
+
+<!-- KRA compliance breakdown -->
+{% if kra_compliance %}
+<div class="card" style="margin-bottom:1.25rem;">
+  <div class="card-header"><h3>Compliance by KRA Category</h3></div>
+  <div class="rv-kra-workload" style="padding:0 1.25rem 1.25rem;">
+    {% for k in kra_compliance %}
+    <div class="rv-kra-bar-row">
+      <span class="rv-kra-bar-label">{{ k.kra_type }}</span>
+      <div class="rv-kra-bar-track">
+        <div class="rv-kra-bar-fill {% if k.rate >= 75 %}rv-kra-bar-fill--good{% elif k.rate >= 50 %}rv-kra-bar-fill--warn{% else %}rv-kra-bar-fill--bad{% endif %}" style="width:{{ k.rate }}%"></div>
+      </div>
+      <span class="rv-kra-bar-count">{{ k.rate }}%</span>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Submissions table -->
+<div class="card">
+  <div class="card-header">
+    <h3>Compliance Status by Submission</h3>
+  </div>
+  {% if submissions %}
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Faculty</th>
+          <th>Document</th>
+          <th>KRA</th>
+          <th>Compliance Status</th>
+          <th>Review Status</th>
+          <th>Submitted</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in submissions %}
+        <tr>
+          <td>
+            <div class="rv-faculty-cell">
+              <span class="rv-avatar">{{ s.faculty_name[:1] }}</span>
+              <div>
+                <div class="rv-faculty-cell__name">{{ s.faculty_name }}</div>
+                {% if s.faculty_email %}<div class="rv-cell-sub">{{ s.faculty_email }}</div>{% endif %}
+              </div>
+            </div>
+          </td>
+          <td><span class="rv-doc-title">{{ s.document_title }}</span></td>
+          <td><span class="kra-tag kra-{{ s.kra_type | lower | replace(' ','-') | replace(',','') | replace('/','') | replace('&','') }}">{{ s.kra_type or '—' }}</span></td>
+          <td><span class="status-tag status-{{ s.compliance_status }}">{{ s.compliance_status | replace('_',' ') | title }}</span></td>
+          <td>{{ status_badge(s.status) }}</td>
+          <td class="rv-cell-muted">{{ s.submitted_at[:10] if s.submitted_at else '—' }}</td>
+          <td>
+            <a href="{{ url_for('reviewer_review', sub_id=s.id) }}" class="btn btn-sm btn-primary">Review</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="rv-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    <p>No submissions to monitor.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

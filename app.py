@@ -829,6 +829,54 @@ def admin_reviewer_assignment():
 
 # ─── Reviewer routes ────────────────────────────────────────────
 
+@app.route("/reviewer/faculties")
+@login_required("reviewer")
+def reviewer_faculties():
+    conn = get_db()
+    uid = g.user["id"]
+    rows = conn.execute(
+        """SELECT * FROM submissions
+           WHERE reviewer_id=? OR reviewer_id IS NULL
+           ORDER BY faculty_name, submitted_at DESC""",
+        (uid,),
+    ).fetchall()
+
+    # Group by faculty
+    faculty_map = {}
+    for r in rows:
+        fname = r["faculty_name"]
+        if fname not in faculty_map:
+            faculty_map[fname] = {
+                "faculty_name": fname,
+                "faculty_email": r["faculty_email"],
+                "docs": [],
+                "pending": 0, "approved": 0, "rejected": 0,
+            }
+        faculty_map[fname]["docs"].append(dict(r))
+        status = r["status"]
+        if status == "pending":
+            faculty_map[fname]["pending"] += 1
+        elif status == "approved":
+            faculty_map[fname]["approved"] += 1
+        elif status == "rejected":
+            faculty_map[fname]["rejected"] += 1
+
+    faculty_list = list(faculty_map.values())
+    total_docs     = sum(len(f["docs"]) for f in faculty_list)
+    total_pending  = sum(f["pending"]  for f in faculty_list)
+    total_approved = sum(f["approved"] for f in faculty_list)
+    total_rejected = sum(f["rejected"] for f in faculty_list)
+
+    return render_template(
+        "reviewer/faculties.html",
+        faculty_list=faculty_list,
+        total_docs=total_docs,
+        total_pending=total_pending,
+        total_approved=total_approved,
+        total_rejected=total_rejected,
+    )
+
+
 @app.route("/reviewer/dashboard")
 @login_required("reviewer")
 def reviewer_dashboard():
@@ -858,13 +906,25 @@ def reviewer_dashboard():
         (uid,),
     ).fetchall()
     notifications = conn.execute(
-        "SELECT * FROM notifications ORDER BY created_at DESC LIMIT 4"
+        "SELECT * FROM notifications ORDER BY created_at DESC LIMIT 5"
+    ).fetchall()
+    activity = conn.execute(
+        """SELECT a.action, a.details, a.created_at FROM audit_logs a
+           WHERE a.user_id=? ORDER BY a.created_at DESC LIMIT 6""",
+        (uid,),
+    ).fetchall()
+    kra_stats = conn.execute(
+        """SELECT kra_type, COUNT(*) as cnt FROM submissions
+           WHERE reviewer_id=? GROUP BY kra_type""",
+        (uid,),
     ).fetchall()
     return render_template(
         "reviewer/dashboard.html",
         stats=stats,
         pending=[dict(p) for p in pending],
         notifications=[dict(n) for n in notifications],
+        activity=[dict(a) for a in activity],
+        kra_stats=[dict(k) for k in kra_stats],
     )
 
 
@@ -872,15 +932,45 @@ def reviewer_dashboard():
 @login_required("reviewer")
 def reviewer_submissions():
     conn = get_db()
-    status = request.args.get("status", "")
-    query = "SELECT * FROM submissions WHERE reviewer_id=? OR reviewer_id IS NULL"
-    params = [g.user["id"]]
+    uid = g.user["id"]
+    status    = request.args.get("status", "")
+    kra       = request.args.get("kra", "")
+    q         = request.args.get("q", "")
+    date_from = request.args.get("date_from", "")
+
+    query = "SELECT * FROM submissions WHERE (reviewer_id=? OR reviewer_id IS NULL)"
+    params = [uid]
     if status:
         query += " AND status = ?"
         params.append(status)
+    if kra:
+        query += " AND kra_type = ?"
+        params.append(kra)
+    if q:
+        query += " AND (faculty_name LIKE ? OR document_title LIKE ?)"
+        params.extend([f"%{q}%", f"%{q}%"])
+    if date_from:
+        query += " AND DATE(submitted_at) >= ?"
+        params.append(date_from)
     query += " ORDER BY submitted_at DESC"
     rows = conn.execute(query, params).fetchall()
-    return render_template("reviewer/submissions.html", submissions=[dict(r) for r in rows])
+
+    kra_types = [r[0] for r in conn.execute(
+        "SELECT DISTINCT kra_type FROM submissions WHERE kra_type IS NOT NULL ORDER BY kra_type"
+    ).fetchall()]
+
+    total    = conn.execute("SELECT COUNT(*) FROM submissions WHERE reviewer_id=? OR reviewer_id IS NULL", (uid,)).fetchone()[0]
+    pending  = conn.execute("SELECT COUNT(*) FROM submissions WHERE status='pending' AND (reviewer_id=? OR reviewer_id IS NULL)", (uid,)).fetchone()[0]
+    approved = conn.execute("SELECT COUNT(*) FROM submissions WHERE status='approved' AND reviewer_id=?", (uid,)).fetchone()[0]
+    rejected = conn.execute("SELECT COUNT(*) FROM submissions WHERE status='rejected' AND reviewer_id=?", (uid,)).fetchone()[0]
+
+    return render_template(
+        "reviewer/submissions.html",
+        submissions=[dict(r) for r in rows],
+        kra_types=kra_types,
+        f_status=status, f_kra=kra, q=q, date_from=date_from,
+        stats={"total": total, "pending": pending, "approved": approved, "rejected": rejected},
+    )
 
 
 @app.route("/reviewer/review/<int:sub_id>", methods=["GET", "POST"])
@@ -960,6 +1050,173 @@ def reviewer_ocr(sub_id):
         submission=dict(sub),
         missing_fields=missing,
         duplicate_detected=duplicate,
+    )
+
+
+@app.route("/reviewer/doc-validation")
+@login_required("reviewer")
+def reviewer_doc_validation():
+    conn = get_db()
+    uid = g.user["id"]
+    rows = conn.execute(
+        "SELECT * FROM submissions WHERE reviewer_id=? OR reviewer_id IS NULL ORDER BY submitted_at DESC",
+        (uid,),
+    ).fetchall()
+    total = len(rows)
+    compliant = sum(1 for r in rows if r["compliance_status"] == "compliant")
+    non_compliant = sum(1 for r in rows if r["compliance_status"] == "non_compliant")
+    under_review = sum(1 for r in rows if r["compliance_status"] == "under_review")
+    requirements = [
+        {"label": "Teaching Load Certificate", "met": compliant > 0, "count": compliant},
+        {"label": "Student Evaluation Summary", "met": compliant > 0, "count": compliant},
+        {"label": "Research Publication Proof", "met": True, "count": total},
+        {"label": "Extension Program Report", "met": True, "count": total},
+        {"label": "Professional Dev Certificates", "met": non_compliant == 0, "count": total - non_compliant},
+        {"label": "DBM–CHED Circular Compliance", "met": compliant > non_compliant, "count": compliant},
+    ]
+    return render_template(
+        "reviewer/doc_validation.html",
+        submissions=[dict(r) for r in rows],
+        stats={"total": total, "compliant": compliant, "non_compliant": non_compliant, "under_review": under_review},
+        requirements=requirements,
+    )
+
+
+@app.route("/reviewer/compliance")
+@login_required("reviewer")
+def reviewer_compliance():
+    conn = get_db()
+    uid = g.user["id"]
+    rows = conn.execute(
+        "SELECT * FROM submissions WHERE reviewer_id=? OR reviewer_id IS NULL ORDER BY submitted_at DESC",
+        (uid,),
+    ).fetchall()
+    compliant = sum(1 for r in rows if r["compliance_status"] == "compliant")
+    non_compliant = sum(1 for r in rows if r["compliance_status"] == "non_compliant")
+    under_review = sum(1 for r in rows if r["compliance_status"] == "under_review")
+    pending = sum(1 for r in rows if r["compliance_status"] == "pending")
+    # KRA compliance breakdown
+    kra_map = {}
+    for r in rows:
+        kt = r["kra_type"] or "Unknown"
+        if kt not in kra_map:
+            kra_map[kt] = {"total": 0, "compliant": 0}
+        kra_map[kt]["total"] += 1
+        if r["compliance_status"] == "compliant":
+            kra_map[kt]["compliant"] += 1
+    kra_compliance = [
+        {"kra_type": k, "rate": round(v["compliant"] / v["total"] * 100, 1) if v["total"] else 0}
+        for k, v in kra_map.items()
+    ]
+    return render_template(
+        "reviewer/compliance.html",
+        submissions=[dict(r) for r in rows],
+        stats={"compliant": compliant, "non_compliant": non_compliant, "under_review": under_review, "pending": pending},
+        kra_compliance=kra_compliance,
+    )
+
+
+@app.route("/reviewer/ocr-results")
+@login_required("reviewer")
+def reviewer_ocr_results():
+    conn = get_db()
+    uid = g.user["id"]
+    rows = conn.execute(
+        "SELECT * FROM submissions WHERE reviewer_id=? OR reviewer_id IS NULL ORDER BY ocr_confidence DESC",
+        (uid,),
+    ).fetchall()
+    high_conf = sum(1 for r in rows if float(r["ocr_confidence"] or 0) >= 80)
+    mid_conf = sum(1 for r in rows if 60 <= float(r["ocr_confidence"] or 0) < 80)
+    low_conf = sum(1 for r in rows if float(r["ocr_confidence"] or 0) < 60)
+    avg_conf = sum(float(r["ocr_confidence"] or 0) for r in rows) / len(rows) if rows else 0
+    return render_template(
+        "reviewer/ocr_results.html",
+        submissions=[dict(r) for r in rows],
+        stats={"high_conf": high_conf, "mid_conf": mid_conf, "low_conf": low_conf, "avg_conf": avg_conf},
+    )
+
+
+@app.route("/reviewer/feedback")
+@login_required("reviewer")
+def reviewer_feedback():
+    conn = get_db()
+    uid = g.user["id"]
+    rows = conn.execute(
+        "SELECT * FROM submissions WHERE reviewer_id=? OR reviewer_id IS NULL ORDER BY updated_at DESC",
+        (uid,),
+    ).fetchall()
+    with_comments = sum(1 for r in rows if r["reviewer_comments"])
+    rejected_with = sum(1 for r in rows if r["status"] == "rejected" and r["reviewer_comments"])
+    pending_fb = sum(1 for r in rows if r["status"] == "pending" and not r["reviewer_comments"])
+    return render_template(
+        "reviewer/feedback.html",
+        submissions=[dict(r) for r in rows],
+        stats={"with_comments": with_comments, "rejected_with_comments": rejected_with, "pending_feedback": pending_fb},
+    )
+
+
+@app.route("/reviewer/reassignment")
+@login_required("reviewer")
+def reviewer_reassignment():
+    conn = get_db()
+    uid = g.user["id"]
+    submissions = conn.execute(
+        "SELECT * FROM submissions WHERE reviewer_id=? ORDER BY submitted_at DESC",
+        (uid,),
+    ).fetchall()
+    reviewers = conn.execute(
+        """SELECT u.*, (SELECT COUNT(*) FROM submissions s WHERE s.reviewer_id = u.id) as review_count
+           FROM users u WHERE u.role='reviewer' AND u.active=1 AND u.id != ? ORDER BY u.full_name""",
+        (uid,),
+    ).fetchall()
+    return render_template(
+        "reviewer/reassignment.html",
+        submissions=[dict(r) for r in submissions],
+        reviewers=[dict(r) for r in reviewers],
+    )
+
+
+@app.route("/reviewer/notifications")
+@login_required("reviewer")
+def reviewer_notifications():
+    conn = get_db()
+    active_type = request.args.get("type", "")
+    query = "SELECT * FROM notifications WHERE 1=1"
+    params = []
+    if active_type:
+        query += " AND category = ?"
+        params.append(active_type)
+    query += " ORDER BY created_at DESC"
+    rows = conn.execute(query, params).fetchall()
+    return render_template(
+        "reviewer/notifications.html",
+        notifications=[dict(n) for n in rows],
+        active_type=active_type,
+    )
+
+
+@app.route("/reviewer/analytics")
+@login_required("reviewer")
+def reviewer_analytics():
+    conn = get_db()
+    uid = g.user["id"]
+    by_status = conn.execute(
+        "SELECT status, COUNT(*) as cnt FROM submissions WHERE reviewer_id=? OR reviewer_id IS NULL GROUP BY status",
+        (uid,),
+    ).fetchall()
+    by_kra = conn.execute(
+        "SELECT kra_type, COUNT(*) as cnt FROM submissions WHERE (reviewer_id=? OR reviewer_id IS NULL) AND kra_type IS NOT NULL GROUP BY kra_type",
+        (uid,),
+    ).fetchall()
+    approved = conn.execute("SELECT COUNT(*) FROM submissions WHERE status='approved' AND reviewer_id=?", (uid,)).fetchone()[0]
+    rejected = conn.execute("SELECT COUNT(*) FROM submissions WHERE status='rejected' AND reviewer_id=?", (uid,)).fetchone()[0]
+    pending = conn.execute("SELECT COUNT(*) FROM submissions WHERE status='pending' AND (reviewer_id=? OR reviewer_id IS NULL)", (uid,)).fetchone()[0]
+    avg_ocr = conn.execute("SELECT AVG(ocr_confidence) FROM submissions WHERE reviewer_id=? OR reviewer_id IS NULL", (uid,)).fetchone()[0] or 0
+    return render_template(
+        "reviewer/analytics.html",
+        by_status=[dict(r) for r in by_status],
+        by_kra=[dict(r) for r in by_kra],
+        summary={"approved": approved, "rejected": rejected, "pending": pending, "avg_ocr": round(avg_ocr, 1)},
     )
 
 

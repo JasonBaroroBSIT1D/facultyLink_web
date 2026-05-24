@@ -1,84 +1,286 @@
 {% extends "base_dashboard.html" %}
-{% block title %}Review Submission — FacultyLink{% endblock %}
+{% block title %}Review Workspace — FacultyLink{% endblock %}
 {% set active_page = 'submissions' %}
 {% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
 {% from 'macros.html' import status_badge %}
 
+{% block extra_head %}
+<style>
+  /* Workspace overrides — full-height split screen */
+  .page-body { padding: 0; display: flex; flex-direction: column; height: calc(100vh - 57px); overflow: hidden; }
+</style>
+{% endblock %}
+
 {% block content %}
-<h1 class="page-title">Faculty Submission Review</h1>
-<p class="page-subtitle">{{ submission.faculty_name }} — {{ submission.document_title }}</p>
-
-<div class="review-layout">
-  <div class="card">
-    <div class="card-header">
-      <h3>Document Preview</h3>
-      <span>{{ status_badge(submission.status) }}</span>
-    </div>
-    <div class="doc-preview">{{ submission.ocr_text or 'No document text available.' }}</div>
-    <p style="margin-top:1rem;font-size:0.85rem;">
-      <strong>KRA:</strong> {{ submission.kra_type }} &nbsp;|&nbsp;
-      <strong>Compliance:</strong> {{ submission.compliance_status|replace('_',' ')|title }}
-    </p>
-    <a href="{{ url_for('reviewer_ocr', sub_id=submission.id) }}" class="btn btn-secondary" style="margin-top:0.75rem;">Open OCR Validation Dashboard →</a>
+<!-- Workspace topbar -->
+<div class="ws-topbar">
+  <div class="ws-topbar__left">
+    <a href="{{ url_for('reviewer_submissions') }}" class="ws-back-btn" aria-label="Back to queue">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+      Validation Queue
+    </a>
+    <span class="ws-topbar__sep" aria-hidden="true">/</span>
+    <span class="ws-topbar__title">{{ submission.document_title }}</span>
   </div>
-
-  <div class="card">
-    <div class="card-header"><h3>Validation & Workflow</h3></div>
-
-    <div class="kra-review-panel">
-      <h4>Automated KRA Score (NBC 461)</h4>
-      {% if submission_kra %}
-      <p class="kra-review-panel__score">
-        <strong>{{ submission_kra.kra_name }}:</strong>
-        {{ submission_kra.raw_score }}% accomplishment
-        <span class="text-muted">(min {{ submission_kra.min_score }}% · weight {{ submission_kra.weight }}%)</span>
-      </p>
-      {% endif %}
-      <p class="kra-review-panel__total">Weighted total score: <strong>{{ kra_eval.total_score }}%</strong></p>
-      <div class="qualification-banner {% if qualification.simulated_qualified %}qualification-banner--pass{% else %}qualification-banner--fail{% endif %}">
-        <strong>{% if qualification.simulated_qualified %}Meets configured KRA thresholds{% else %}Below qualification thresholds{% endif %}</strong>
-        <ul>{% for note in qualification.notes %}<li>{{ note }}</li>{% endfor %}</ul>
-      </div>
-      {% if settings.get('reviewer_validation_required', '1') == '1' %}
-      <p class="form-hint">Reviewer validation required before final reclassification approval.</p>
-      {% endif %}
-    </div>
-
-    <div class="validation-grid">
-      <div class="val-indicator {% if submission.ocr_confidence >= 80 %}pass{% elif submission.ocr_confidence >= 60 %}warn{% else %}fail{% endif %}">
-        <div class="pct">{{ '%.0f'|format(submission.ocr_confidence) }}%</div>
-        <div class="lbl">OCR Confidence</div>
-      </div>
-      <div class="val-indicator {% if submission.compliance_status == 'compliant' %}pass{% else %}warn{% endif %}">
-        <div class="pct">DBM</div>
-        <div class="lbl">CHED Compliance</div>
-      </div>
-      <div class="val-indicator pass">
-        <div class="pct">{{ submission.kra_type[:4] }}</div>
-        <div class="lbl">KRA Class</div>
-      </div>
-    </div>
-
-    <form method="POST" class="form-panel">
-      <div class="form-group">
-        <label>Compliance Status</label>
-        <select name="compliance_status">
-          <option value="compliant" {% if submission.compliance_status=='compliant' %}selected{% endif %}>Compliant</option>
-          <option value="non_compliant" {% if submission.compliance_status=='non_compliant' %}selected{% endif %}>Non-Compliant</option>
-          <option value="under_review" {% if submission.compliance_status=='under_review' %}selected{% endif %}>Under Review</option>
-          <option value="pending" {% if submission.compliance_status=='pending' %}selected{% endif %}>Pending</option>
-        </select>
-      </div>
-      <div class="form-group">
-        <label>Reviewer Comments & Feedback</label>
-        <textarea name="comments" placeholder="Enter validation notes, missing fields, or feedback for faculty...">{{ submission.reviewer_comments or '' }}</textarea>
-      </div>
-      <div class="action-bar">
-        <button type="submit" name="action" value="approve" class="btn btn-success">Approve Submission</button>
-        <button type="submit" name="action" value="reject" class="btn btn-danger">Reject Submission</button>
-        <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-secondary">Cancel</a>
-      </div>
-    </form>
+  <div class="ws-topbar__meta">
+    <span class="vq-status-badge vq-status-badge--{{ submission.status }}">{{ submission.status | replace('_',' ') | title }}</span>
+    <span class="vq-compliance-badge vq-compliance-badge--{{ submission.compliance_status }}">{{ submission.compliance_status | replace('_',' ') | title }}</span>
+    <a href="{{ url_for('reviewer_ocr', sub_id=submission.id) }}" class="btn btn-sm btn-secondary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h3v3H7z"/><path d="M14 7h3v3h-3z"/><path d="M7 14h3v3H7z"/><path d="M14 14h3v3h-3z"/></svg>
+      Full OCR Report
+    </a>
   </div>
 </div>
+
+<!-- Split workspace -->
+<div class="ws-layout">
+
+  <!-- ── LEFT PANEL: Document viewer ── -->
+  <div class="ws-left">
+
+    <!-- Doc header -->
+    <div class="ws-panel-header">
+      <div class="ws-panel-header__title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--accent-blue);" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        Document Preview
+      </div>
+      <div class="ws-panel-header__tabs" role="tablist">
+        <button class="ws-tab ws-tab--active" role="tab" aria-selected="true" data-ws-tab="extracted" aria-controls="ws-pane-extracted">Extracted Text</button>
+        <button class="ws-tab" role="tab" aria-selected="false" data-ws-tab="raw" aria-controls="ws-pane-raw">Raw OCR</button>
+      </div>
+    </div>
+
+    <!-- Faculty info strip -->
+    <div class="ws-faculty-strip">
+      <span class="ws-faculty-strip__avatar">{{ submission.faculty_name[:1] }}</span>
+      <div class="ws-faculty-strip__info">
+        <span class="ws-faculty-strip__name">{{ submission.faculty_name }}</span>
+        <span class="ws-faculty-strip__meta">
+          {{ submission.faculty_email or '' }}
+          {% if submission.faculty_email %}&nbsp;·&nbsp;{% endif %}
+          Submitted {{ submission.submitted_at[:10] if submission.submitted_at else '—' }}
+          &nbsp;·&nbsp; KRA: <strong>{{ submission.kra_type or '—' }}</strong>
+        </span>
+      </div>
+      <div class="ws-faculty-strip__badges">
+        <span class="kra-tag kra-{{ submission.kra_type | lower | replace(' ','-') | replace(',','') | replace('/','') | replace('&','') }}">{{ submission.kra_type or '—' }}</span>
+      </div>
+    </div>
+
+    <!-- Document panes -->
+    <div id="ws-pane-extracted" class="ws-doc-pane ws-doc-pane--active" role="tabpanel">
+      <div class="ws-doc-viewer">
+        <!-- Simulated document page -->
+        <div class="ws-doc-page">
+          <div class="ws-doc-page__header">
+            <div class="ws-doc-page__logo-row">
+              <div class="ws-doc-page__seal" aria-hidden="true">🎓</div>
+              <div>
+                <div class="ws-doc-page__institution">Republic of the Philippines</div>
+                <div class="ws-doc-page__dept">Commission on Higher Education</div>
+              </div>
+            </div>
+            <div class="ws-doc-page__title">{{ submission.document_title }}</div>
+            <div class="ws-doc-page__subtitle">DBM–CHED Joint Circular · NBC 461 Compliance Document</div>
+          </div>
+          <div class="ws-doc-page__divider"></div>
+          <div class="ws-doc-page__body">
+            <div class="ws-doc-page__field-row">
+              <span class="ws-doc-page__field-label">Faculty Name:</span>
+              <span class="ws-doc-page__field-val">{{ submission.faculty_name }}</span>
+            </div>
+            <div class="ws-doc-page__field-row">
+              <span class="ws-doc-page__field-label">Email:</span>
+              <span class="ws-doc-page__field-val">{{ submission.faculty_email or '—' }}</span>
+            </div>
+            <div class="ws-doc-page__field-row">
+              <span class="ws-doc-page__field-label">KRA Category:</span>
+              <span class="ws-doc-page__field-val">{{ submission.kra_type or '—' }}</span>
+            </div>
+            <div class="ws-doc-page__field-row">
+              <span class="ws-doc-page__field-label">Date Submitted:</span>
+              <span class="ws-doc-page__field-val">{{ submission.submitted_at[:10] if submission.submitted_at else '—' }}</span>
+            </div>
+            <div class="ws-doc-page__field-row">
+              <span class="ws-doc-page__field-label">Compliance Status:</span>
+              <span class="ws-doc-page__field-val">{{ submission.compliance_status | replace('_',' ') | title }}</span>
+            </div>
+            <div class="ws-doc-page__divider" style="margin:1rem 0;"></div>
+            <div class="ws-doc-page__content-label">Document Content</div>
+            <div class="ws-doc-page__content">{{ submission.ocr_text or 'No document text available for this submission.' }}</div>
+          </div>
+          <div class="ws-doc-page__footer">
+            <span>FacultyLink Document Management System</span>
+            <span>OCR Confidence: {{ '%.0f'|format(submission.ocr_confidence | float) }}%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="ws-pane-raw" class="ws-doc-pane" role="tabpanel" hidden>
+      <div class="ws-ocr-raw-pane">
+        <div class="ws-ocr-raw-header">
+          <span class="rv-ocr-engine-badge">OCR Engine Output</span>
+          {% set conf = submission.ocr_confidence | float %}
+          <span class="vq-ocr-pct vq-ocr-pct--{% if conf >= 80 %}high{% elif conf >= 60 %}mid{% else %}low{% endif %}">
+            Confidence: {{ '%.0f'|format(conf) }}%
+          </span>
+        </div>
+        <pre class="ws-ocr-raw-text">{{ submission.ocr_text or 'No OCR text extracted.' }}</pre>
+      </div>
+    </div>
+
+  </div>
+  <!-- end ws-left -->
+
+  <!-- ── RIGHT PANEL: Review tools ── -->
+  <div class="ws-right">
+
+    <!-- Validation indicators -->
+    <div class="ws-section">
+      <div class="ws-section__title">Validation Indicators</div>
+      <div class="ws-val-grid">
+        {% set conf = submission.ocr_confidence | float %}
+        <div class="ws-val-item ws-val-item--{% if conf >= 80 %}pass{% elif conf >= 60 %}warn{% else %}fail{% endif %}">
+          <span class="ws-val-item__num">{{ '%.0f'|format(conf) }}%</span>
+          <span class="ws-val-item__label">OCR Confidence</span>
+        </div>
+        <div class="ws-val-item ws-val-item--{% if submission.compliance_status == 'compliant' %}pass{% elif submission.compliance_status == 'non_compliant' %}fail{% else %}warn{% endif %}">
+          <span class="ws-val-item__num" style="font-size:0.75rem;line-height:1.2;">{{ submission.compliance_status | replace('_',' ') | upper }}</span>
+          <span class="ws-val-item__label">DBM–CHED</span>
+        </div>
+        <div class="ws-val-item ws-val-item--{% if qualification.simulated_qualified %}pass{% else %}warn{% endif %}">
+          <span class="ws-val-item__num">{{ kra_eval.total_score }}%</span>
+          <span class="ws-val-item__label">KRA Score</span>
+        </div>
+        <div class="ws-val-item ws-val-item--pass">
+          <span class="ws-val-item__num" style="font-size:0.72rem;line-height:1.2;">{{ (submission.kra_type or '—')[:10] }}</span>
+          <span class="ws-val-item__label">KRA Type</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Compliance checklist -->
+    <div class="ws-section">
+      <div class="ws-section__title">Compliance Checklist</div>
+      <div class="ws-checklist">
+        {% set conf = submission.ocr_confidence | float %}
+        <div class="ws-check ws-check--{% if submission.compliance_status == 'compliant' %}pass{% else %}fail{% endif %}">
+          <span class="ws-check__dot"></span>
+          <div class="ws-check__body">
+            <span class="ws-check__label">DBM–CHED Joint Circular</span>
+            <span class="ws-check__val">{{ submission.compliance_status | replace('_',' ') | title }}</span>
+          </div>
+          <span class="ws-check__icon" aria-hidden="true">{% if submission.compliance_status == 'compliant' %}✓{% else %}✗{% endif %}</span>
+        </div>
+        <div class="ws-check ws-check--pass">
+          <span class="ws-check__dot"></span>
+          <div class="ws-check__body">
+            <span class="ws-check__label">KRA Classification</span>
+            <span class="ws-check__val">{{ submission.kra_type or '—' }}</span>
+          </div>
+          <span class="ws-check__icon" aria-hidden="true">✓</span>
+        </div>
+        <div class="ws-check ws-check--{% if conf >= 60 %}pass{% else %}fail{% endif %}">
+          <span class="ws-check__dot"></span>
+          <div class="ws-check__body">
+            <span class="ws-check__label">OCR Readability</span>
+            <span class="ws-check__val">{% if conf >= 80 %}High{% elif conf >= 60 %}Acceptable{% else %}Low — manual check needed{% endif %}</span>
+          </div>
+          <span class="ws-check__icon" aria-hidden="true">{% if conf >= 60 %}✓{% else %}✗{% endif %}</span>
+        </div>
+        <div class="ws-check ws-check--{% if qualification.simulated_qualified %}pass{% else %}warn{% endif %}">
+          <span class="ws-check__dot"></span>
+          <div class="ws-check__body">
+            <span class="ws-check__label">NBC 461 Thresholds</span>
+            <span class="ws-check__val">{% if qualification.simulated_qualified %}Meets requirements{% else %}Below threshold{% endif %}</span>
+          </div>
+          <span class="ws-check__icon" aria-hidden="true">{% if qualification.simulated_qualified %}✓{% else %}⚠{% endif %}</span>
+        </div>
+        {% if submission_kra %}
+        <div class="ws-check ws-check--{% if submission_kra.raw_score >= submission_kra.min_score %}pass{% else %}fail{% endif %}">
+          <span class="ws-check__dot"></span>
+          <div class="ws-check__body">
+            <span class="ws-check__label">{{ submission_kra.kra_name }} Score</span>
+            <span class="ws-check__val">{{ submission_kra.raw_score }}% (min {{ submission_kra.min_score }}%)</span>
+          </div>
+          <span class="ws-check__icon" aria-hidden="true">{% if submission_kra.raw_score >= submission_kra.min_score %}✓{% else %}✗{% endif %}</span>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Submission metadata -->
+    <div class="ws-section">
+      <div class="ws-section__title">Submission Details</div>
+      <dl class="ws-meta">
+        <div class="ws-meta__row"><dt>Faculty</dt><dd>{{ submission.faculty_name }}</dd></div>
+        <div class="ws-meta__row"><dt>Email</dt><dd>{{ submission.faculty_email or '—' }}</dd></div>
+        <div class="ws-meta__row"><dt>Document</dt><dd>{{ submission.document_title }}</dd></div>
+        <div class="ws-meta__row"><dt>KRA Type</dt><dd>{{ submission.kra_type or '—' }}</dd></div>
+        <div class="ws-meta__row"><dt>Submitted</dt><dd>{{ submission.submitted_at[:10] if submission.submitted_at else '—' }}</dd></div>
+        <div class="ws-meta__row"><dt>Last Updated</dt><dd>{{ submission.updated_at[:10] if submission.updated_at else '—' }}</dd></div>
+      </dl>
+    </div>
+
+    <!-- Review form -->
+    <div class="ws-section ws-section--form">
+      <div class="ws-section__title">Review Decision</div>
+      <form method="POST" class="ws-form">
+        <div class="ws-form__group">
+          <label class="ws-form__label">Compliance Status</label>
+          <select name="compliance_status" class="ws-form__select">
+            <option value="compliant"     {% if submission.compliance_status=='compliant' %}selected{% endif %}>✓ Compliant</option>
+            <option value="non_compliant" {% if submission.compliance_status=='non_compliant' %}selected{% endif %}>✗ Non-Compliant</option>
+            <option value="under_review"  {% if submission.compliance_status=='under_review' %}selected{% endif %}>⏳ Under Review</option>
+            <option value="pending"       {% if submission.compliance_status=='pending' %}selected{% endif %}>◌ Pending</option>
+          </select>
+        </div>
+        <div class="ws-form__group">
+          <label class="ws-form__label">Reviewer Comments</label>
+          <textarea name="comments" class="ws-form__textarea"
+                    placeholder="Enter validation notes, missing fields, or revision instructions…"
+                    rows="4">{{ submission.reviewer_comments or '' }}</textarea>
+          <span class="ws-form__hint">Visible to the faculty member.</span>
+        </div>
+        <div class="ws-decision-row">
+          <button type="submit" name="action" value="approve" class="ws-btn ws-btn--approve">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:15px;height:15px;" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+            Approve
+          </button>
+          <button type="submit" name="action" value="reject" class="ws-btn ws-btn--reject">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:15px;height:15px;" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Reject
+          </button>
+        </div>
+        <a href="{{ url_for('reviewer_submissions') }}" class="ws-cancel-link">← Back to queue</a>
+      </form>
+    </div>
+
+  </div>
+  <!-- end ws-right -->
+
+</div>
+<!-- end ws-layout -->
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  // Tab switching
+  const tabs  = document.querySelectorAll('.ws-tab');
+  const panes = document.querySelectorAll('.ws-doc-pane');
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.wsTab;
+      tabs.forEach(t => { t.classList.remove('ws-tab--active'); t.setAttribute('aria-selected','false'); });
+      panes.forEach(p => { p.classList.remove('ws-doc-pane--active'); p.hidden = true; });
+      tab.classList.add('ws-tab--active');
+      tab.setAttribute('aria-selected','true');
+      const pane = document.getElementById('ws-pane-' + target);
+      if (pane) { pane.classList.add('ws-doc-pane--active'); pane.hidden = false; }
+    });
+  });
+})();
+</script>
 {% endblock %}

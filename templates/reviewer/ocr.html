@@ -1,61 +1,164 @@
 {% extends "base_dashboard.html" %}
 {% block title %}OCR Validation — FacultyLink{% endblock %}
-{% set active_page = 'validation' %}
+{% set active_page = 'submissions' %}
 {% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
 {% from 'macros.html' import status_badge %}
 
 {% block content %}
-<h1 class="page-title">OCR Processing & Validation</h1>
-<p class="page-subtitle">{{ submission.document_title }} — {{ submission.faculty_name }}</p>
+<!-- Breadcrumb -->
+<div class="rv-breadcrumb">
+  <a href="{{ url_for('reviewer_submissions') }}">Submissions</a>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+  <a href="{{ url_for('reviewer_review', sub_id=submission.id) }}">{{ submission.faculty_name }}</a>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+  <span>OCR Report</span>
+</div>
 
-<div class="review-layout">
-  <div class="card">
-    <div class="card-header"><h3>Uploaded Document Preview</h3></div>
-    <div class="doc-preview" style="min-height:320px;">{{ submission.ocr_text }}</div>
+<div class="page-header-row" style="margin-bottom:1.25rem;">
+  <div>
+    <h1 class="page-title" style="font-size:1.3rem;">OCR Validation Report</h1>
+    <p class="page-subtitle">{{ submission.document_title }} · {{ submission.faculty_name }}</p>
+  </div>
+  <a href="{{ url_for('reviewer_review', sub_id=submission.id) }}" class="btn btn-primary">
+    Proceed to Review →
+  </a>
+</div>
+
+<div class="rv-ocr-layout">
+
+  <!-- Left: document text -->
+  <div class="rv-ocr-left">
+    <div class="card">
+      <div class="card-header">
+        <h3>Extracted Document Text</h3>
+        <span class="rv-ocr-engine-badge">OCR Engine</span>
+      </div>
+      <div class="rv-doc-preview rv-doc-preview--ocr">{{ submission.ocr_text or 'No text could be extracted from this document.' }}</div>
+    </div>
   </div>
 
-  <div>
-    <div class="card" style="margin-bottom:1rem;">
-      <div class="card-header"><h3>OCR Extracted Text</h3></div>
-      <div class="doc-preview" style="min-height:160px;font-size:0.75rem;">{{ submission.ocr_text }}</div>
+  <!-- Right: analysis -->
+  <div class="rv-ocr-right">
+
+    <!-- Confidence gauge -->
+    <div class="card rv-confidence-card">
+      <div class="card-header"><h3>Confidence Score</h3></div>
+      <div class="rv-confidence-body">
+        {% set conf = submission.ocr_confidence | float %}
+        <div class="rv-confidence-ring {% if conf >= 80 %}rv-confidence-ring--high{% elif conf >= 60 %}rv-confidence-ring--mid{% else %}rv-confidence-ring--low{% endif %}">
+          <span class="rv-confidence-ring__value">{{ '%.0f'|format(conf) }}%</span>
+          <span class="rv-confidence-ring__label">Confidence</span>
+        </div>
+        <div class="rv-confidence-legend">
+          <div class="rv-confidence-legend__item">
+            <span class="rv-confidence-legend__dot rv-confidence-legend__dot--high"></span>
+            <span>≥ 80% — High confidence</span>
+          </div>
+          <div class="rv-confidence-legend__item">
+            <span class="rv-confidence-legend__dot rv-confidence-legend__dot--mid"></span>
+            <span>60–79% — Review recommended</span>
+          </div>
+          <div class="rv-confidence-legend__item">
+            <span class="rv-confidence-legend__dot rv-confidence-legend__dot--low"></span>
+            <span>&lt; 60% — Manual verification required</span>
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="validation-grid">
-      <div class="val-indicator {% if submission.ocr_confidence >= 80 %}pass{% elif submission.ocr_confidence >= 60 %}warn{% else %}fail{% endif %}">
-        <div class="confidence-ring">{{ '%.0f'|format(submission.ocr_confidence) }}%</div>
-        <div class="lbl">Validation Confidence</div>
-      </div>
-      <div class="val-indicator {% if submission.compliance_status == 'compliant' %}pass{% else %}fail{% endif %}">
-        <div class="pct" style="font-size:1rem;">{{ submission.compliance_status|replace('_',' ')|upper }}</div>
-        <div class="lbl">Compliance Status</div>
-      </div>
-      <div class="val-indicator pass">
-        <div class="pct" style="font-size:1rem;">{{ submission.kra_type }}</div>
-        <div class="lbl">KRA Classification</div>
-      </div>
-      <div class="val-indicator {% if duplicate_detected %}fail{% else %}pass{% endif %}">
-        <div class="pct" style="font-size:1rem;">{% if duplicate_detected %}YES{% else %}NO{% endif %}</div>
-        <div class="lbl">Duplicate File</div>
+    <!-- Validation checks -->
+    <div class="card" style="margin-top:1rem;">
+      <div class="card-header"><h3>Validation Checks</h3></div>
+      <div class="rv-checks-list">
+        <div class="rv-check-item {% if submission.compliance_status == 'compliant' %}rv-check-item--pass{% else %}rv-check-item--fail{% endif %}">
+          <span class="rv-check-item__icon" aria-hidden="true">{% if submission.compliance_status == 'compliant' %}✓{% else %}✗{% endif %}</span>
+          <div>
+            <span class="rv-check-item__label">DBM–CHED Compliance</span>
+            <span class="rv-check-item__value">{{ submission.compliance_status | replace('_',' ') | title }}</span>
+          </div>
+        </div>
+        <div class="rv-check-item rv-check-item--pass">
+          <span class="rv-check-item__icon" aria-hidden="true">✓</span>
+          <div>
+            <span class="rv-check-item__label">KRA Classification</span>
+            <span class="rv-check-item__value">{{ submission.kra_type or '—' }}</span>
+          </div>
+        </div>
+        <div class="rv-check-item {% if duplicate_detected %}rv-check-item--fail{% else %}rv-check-item--pass{% endif %}">
+          <span class="rv-check-item__icon" aria-hidden="true">{% if duplicate_detected %}✗{% else %}✓{% endif %}</span>
+          <div>
+            <span class="rv-check-item__label">Duplicate Detection</span>
+            <span class="rv-check-item__value">{% if duplicate_detected %}Possible duplicate detected{% else %}No duplicate found{% endif %}</span>
+          </div>
+        </div>
+        <div class="rv-check-item {% if conf >= 60 %}rv-check-item--pass{% else %}rv-check-item--fail{% endif %}">
+          <span class="rv-check-item__icon" aria-hidden="true">{% if conf >= 60 %}✓{% else %}✗{% endif %}</span>
+          <div>
+            <span class="rv-check-item__label">OCR Readability</span>
+            <span class="rv-check-item__value">{% if conf >= 80 %}High{% elif conf >= 60 %}Acceptable{% else %}Low — manual check needed{% endif %}</span>
+          </div>
+        </div>
       </div>
     </div>
 
+    <!-- Missing fields -->
     <div class="card" style="margin-top:1rem;">
       <div class="card-header"><h3>Missing Field Detection</h3></div>
-      {% if missing_fields %}
-      <ul class="missing-list">
-        {% for field in missing_fields %}
-        <li>⚠ {{ field }}</li>
-        {% endfor %}
-      </ul>
-      {% else %}
-      <p style="color:var(--success);font-size:0.9rem;">✓ All required fields detected</p>
-      {% endif %}
+      <div style="padding:0.75rem 1.25rem 1rem;">
+        {% if missing_fields %}
+        <ul class="rv-missing-list">
+          {% for field in missing_fields %}
+          <li>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width:14px;height:14px;flex-shrink:0;color:#b91c1c;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            {{ field }}
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="rv-all-clear">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          All required fields detected
+        </div>
+        {% endif %}
+      </div>
     </div>
 
-    <div class="action-bar">
+    <!-- Submission metadata -->
+    <div class="card" style="margin-top:1rem;">
+      <div class="card-header"><h3>Submission Details</h3></div>
+      <dl class="rv-meta-list">
+        <div class="rv-meta-list__row">
+          <dt>Faculty</dt>
+          <dd>{{ submission.faculty_name }}</dd>
+        </div>
+        <div class="rv-meta-list__row">
+          <dt>Email</dt>
+          <dd>{{ submission.faculty_email or '—' }}</dd>
+        </div>
+        <div class="rv-meta-list__row">
+          <dt>Document</dt>
+          <dd>{{ submission.document_title }}</dd>
+        </div>
+        <div class="rv-meta-list__row">
+          <dt>KRA Type</dt>
+          <dd>{{ submission.kra_type or '—' }}</dd>
+        </div>
+        <div class="rv-meta-list__row">
+          <dt>Submitted</dt>
+          <dd>{{ submission.submitted_at[:10] if submission.submitted_at else '—' }}</dd>
+        </div>
+        <div class="rv-meta-list__row">
+          <dt>Status</dt>
+          <dd>{{ status_badge(submission.status) }}</dd>
+        </div>
+      </dl>
+    </div>
+
+    <div class="rv-ocr-actions">
       <a href="{{ url_for('reviewer_review', sub_id=submission.id) }}" class="btn btn-primary">Proceed to Review</a>
       <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-secondary">Back to List</a>
     </div>
+
   </div>
 </div>
 {% endblock %}

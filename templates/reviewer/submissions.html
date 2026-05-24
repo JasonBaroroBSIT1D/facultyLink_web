@@ -1,52 +1,217 @@
 {% extends "base_dashboard.html" %}
-{% block title %}Submissions — FacultyLink{% endblock %}
+{% block title %}Validation Queue — FacultyLink{% endblock %}
 {% set active_page = 'submissions' %}
 {% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
 {% from 'macros.html' import status_badge %}
 
 {% block content %}
-<h1 class="page-title">Faculty Submission Review</h1>
-<p class="page-subtitle">Open submissions, preview documents, and manage validation workflow</p>
+<div class="vq-page-header">
+  <div>
+    <h1 class="page-title">Validation Queue</h1>
+    <p class="page-subtitle">Review, validate, and manage faculty documentary submissions.</p>
+  </div>
+</div>
 
-<form class="filters-bar" method="GET">
-  <select name="status">
-    <option value="">All Status</option>
-    <option value="pending" {% if request.args.get('status')=='pending' %}selected{% endif %}>Pending</option>
-    <option value="approved" {% if request.args.get('status')=='approved' %}selected{% endif %}>Approved</option>
-    <option value="rejected" {% if request.args.get('status')=='rejected' %}selected{% endif %}>Rejected</option>
+<!-- Stat tab cards -->
+<div class="vq-stat-tabs">
+  <a href="{{ url_for('reviewer_submissions') }}"
+     class="vq-stat-tab {% if not f_status %}vq-stat-tab--active{% endif %}">
+    <span class="vq-stat-tab__icon vq-stat-tab__icon--all">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    </span>
+    <div class="vq-stat-tab__body">
+      <span class="vq-stat-tab__num">{{ stats.total }}</span>
+      <span class="vq-stat-tab__label">All Submissions</span>
+    </div>
+  </a>
+  <a href="{{ url_for('reviewer_submissions', status='pending') }}"
+     class="vq-stat-tab {% if f_status=='pending' %}vq-stat-tab--active vq-stat-tab--pending{% endif %}">
+    <span class="vq-stat-tab__icon vq-stat-tab__icon--pending">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    </span>
+    <div class="vq-stat-tab__body">
+      <span class="vq-stat-tab__num">{{ stats.pending }}</span>
+      <span class="vq-stat-tab__label">Pending</span>
+    </div>
+    {% if stats.pending > 0 and not f_status %}
+    <span class="vq-stat-tab__badge">{{ stats.pending }} need action</span>
+    {% endif %}
+  </a>
+  <a href="{{ url_for('reviewer_submissions', status='approved') }}"
+     class="vq-stat-tab {% if f_status=='approved' %}vq-stat-tab--active vq-stat-tab--approved{% endif %}">
+    <span class="vq-stat-tab__icon vq-stat-tab__icon--approved">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+    </span>
+    <div class="vq-stat-tab__body">
+      <span class="vq-stat-tab__num">{{ stats.approved }}</span>
+      <span class="vq-stat-tab__label">Approved</span>
+    </div>
+  </a>
+  <a href="{{ url_for('reviewer_submissions', status='rejected') }}"
+     class="vq-stat-tab {% if f_status=='rejected' %}vq-stat-tab--active vq-stat-tab--rejected{% endif %}">
+    <span class="vq-stat-tab__icon vq-stat-tab__icon--rejected">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    </span>
+    <div class="vq-stat-tab__body">
+      <span class="vq-stat-tab__num">{{ stats.rejected }}</span>
+      <span class="vq-stat-tab__label">Rejected</span>
+    </div>
+  </a>
+</div>
+
+<!-- Filter bar -->
+<form method="GET" class="vq-filter-bar">
+  <div class="vq-search-wrap">
+    <svg class="rv-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" name="q" value="{{ q }}" placeholder="Search faculty or document…" class="vq-search-input" autocomplete="off">
+  </div>
+  <select name="status" class="vq-filter-select">
+    <option value="">All Statuses</option>
+    <option value="pending"      {% if f_status=='pending' %}selected{% endif %}>Pending</option>
+    <option value="approved"     {% if f_status=='approved' %}selected{% endif %}>Approved</option>
+    <option value="rejected"     {% if f_status=='rejected' %}selected{% endif %}>Rejected</option>
+    <option value="under_review" {% if f_status=='under_review' %}selected{% endif %}>Under Review</option>
   </select>
-  <button type="submit" class="btn btn-primary">Filter</button>
+  <select name="kra" class="vq-filter-select">
+    <option value="">All KRA Types</option>
+    {% for k in kra_types %}
+    <option value="{{ k }}" {% if f_kra==k %}selected{% endif %}>{{ k }}</option>
+    {% endfor %}
+  </select>
+  <div class="vq-filter-date-wrap">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;color:var(--text-muted);flex-shrink:0;" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    <input type="date" name="date_from" value="{{ date_from or '' }}" class="vq-date-input" title="From date">
+  </div>
+  <button type="submit" class="btn btn-primary btn-sm">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:13px;height:13px;" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+    Filter
+  </button>
+  {% if f_status or f_kra or q or date_from %}
+  <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-secondary btn-sm">Clear</a>
+  {% endif %}
 </form>
 
-<div class="card">
-  <table class="data-table">
-    <thead>
-      <tr>
-        <th>Faculty</th>
-        <th>Document</th>
-        <th>KRA</th>
-        <th>Status</th>
-        <th>Compliance</th>
-        <th>Confidence</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for s in submissions %}
-      <tr>
-        <td><strong>{{ s.faculty_name }}</strong></td>
-        <td>{{ s.document_title }}</td>
-        <td>{{ s.kra_type }}</td>
-        <td>{{ status_badge(s.status) }}</td>
-        <td>{{ status_badge(s.compliance_status) }}</td>
-        <td>{{ '%.1f'|format(s.ocr_confidence) }}%</td>
-        <td>
-          <a href="{{ url_for('reviewer_review', sub_id=s.id) }}" class="btn btn-sm btn-primary">Review</a>
-          <a href="{{ url_for('reviewer_ocr', sub_id=s.id) }}" class="btn btn-sm btn-secondary">OCR</a>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+<!-- Submissions table -->
+<div class="card vq-table-card">
+  {% if submissions %}
+  <div class="vq-table-scroll">
+    <table class="vq-table">
+      <colgroup>
+        <col class="vq-col-faculty">
+        <col class="vq-col-doc">
+        <col class="vq-col-kra">
+        <col class="vq-col-date">
+        <col class="vq-col-status">
+        <col class="vq-col-compliance">
+        <col class="vq-col-ocr">
+        <col class="vq-col-actions">
+      </colgroup>
+      <thead>
+        <tr>
+          <th>Faculty</th>
+          <th>Document</th>
+          <th>KRA</th>
+          <th class="vq-hide-sm">Submitted</th>
+          <th>Status</th>
+          <th class="vq-hide-md">Compliance</th>
+          <th class="vq-hide-md">OCR</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in submissions %}
+        {% set conf = s.ocr_confidence | float %}
+        <tr class="vq-row vq-row--{{ s.status }}">
+          <!-- Faculty -->
+          <td>
+            <div class="vq-faculty-cell">
+              <span class="vq-avatar">{{ s.faculty_name[:1] }}</span>
+              <div class="vq-faculty-cell__info">
+                <span class="vq-faculty-cell__name">{{ s.faculty_name }}</span>
+                <span class="vq-faculty-cell__email vq-hide-sm">{{ s.faculty_email or '' }}</span>
+              </div>
+            </div>
+          </td>
+          <!-- Document -->
+          <td>
+            <span class="vq-doc-title" title="{{ s.document_title }}">{{ s.document_title }}</span>
+          </td>
+          <!-- KRA -->
+          <td>
+            <span class="kra-tag kra-{{ s.kra_type | lower | replace(' ','-') | replace(',','') | replace('/','') | replace('&','') }}">{{ s.kra_type or '—' }}</span>
+          </td>
+          <!-- Date -->
+          <td class="vq-cell-muted vq-hide-sm">{{ s.submitted_at[:10] if s.submitted_at else '—' }}</td>
+          <!-- Status -->
+          <td>
+            <span class="vq-status-badge vq-status-badge--{{ s.status }}">
+              {{ s.status | replace('_',' ') | title }}
+            </span>
+          </td>
+          <!-- Compliance -->
+          <td class="vq-hide-md">
+            <span class="vq-compliance-badge vq-compliance-badge--{{ s.compliance_status }}">
+              {{ s.compliance_status | replace('_',' ') | title }}
+            </span>
+          </td>
+          <!-- OCR -->
+          <td class="vq-hide-md">
+            <div class="vq-ocr-wrap">
+              <div class="vq-ocr-bar-track">
+                <div class="vq-ocr-bar-fill vq-ocr-bar-fill--{% if conf >= 80 %}high{% elif conf >= 60 %}mid{% else %}low{% endif %}"
+                     style="width:{{ [conf,100]|min }}%"></div>
+              </div>
+              <span class="vq-ocr-pct vq-ocr-pct--{% if conf >= 80 %}high{% elif conf >= 60 %}mid{% else %}low{% endif %}">{{ '%.0f'|format(conf) }}%</span>
+            </div>
+          </td>
+          <!-- Actions: icon-only buttons -->
+          <td>
+            <div class="vq-actions">
+              <a href="{{ url_for('reviewer_review', sub_id=s.id) }}"
+                 class="vq-btn vq-btn--review" title="Review">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span class="vq-btn-label">Review</span>
+              </a>
+              <a href="{{ url_for('reviewer_ocr', sub_id=s.id) }}"
+                 class="vq-btn vq-btn--ocr" title="OCR Report">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 7h3v3H7z"/><path d="M14 7h3v3h-3z"/><path d="M7 14h3v3H7z"/><path d="M14 14h3v3h-3z"/></svg>
+                <span class="vq-btn-label vq-hide-sm">OCR</span>
+              </a>
+              <form method="POST" action="{{ url_for('reviewer_review', sub_id=s.id) }}" class="vq-inline-form">
+                <input type="hidden" name="action" value="approve">
+                <input type="hidden" name="comments" value="{{ s.reviewer_comments or '' }}">
+                <input type="hidden" name="compliance_status" value="{{ s.compliance_status }}">
+                <button type="submit" class="vq-btn vq-btn--approve" title="Approve"
+                        onclick="return confirm('Approve this submission?')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><polyline points="20 6 9 17 4 12"/></svg>
+                  <span class="vq-btn-label vq-hide-sm">Approve</span>
+                </button>
+              </form>
+              <form method="POST" action="{{ url_for('reviewer_review', sub_id=s.id) }}" class="vq-inline-form">
+                <input type="hidden" name="action" value="reject">
+                <input type="hidden" name="comments" value="{{ s.reviewer_comments or '' }}">
+                <input type="hidden" name="compliance_status" value="{{ s.compliance_status }}">
+                <button type="submit" class="vq-btn vq-btn--reject" title="Reject"
+                        onclick="return confirm('Reject this submission?')">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  <span class="vq-btn-label vq-hide-sm">Reject</span>
+                </button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="rv-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <p>No submissions found{% if f_status or f_kra or q %} matching your filters{% endif %}.</p>
+    {% if f_status or f_kra or q %}
+    <a href="{{ url_for('reviewer_submissions') }}" class="btn btn-secondary btn-sm" style="margin-top:0.75rem;">Clear filters</a>
+    {% endif %}
+  </div>
+  {% endif %}
 </div>
 {% endblock %}

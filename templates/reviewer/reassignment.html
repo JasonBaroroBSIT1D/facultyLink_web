@@ -1,0 +1,107 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Reassignment Management — FacultyLink{% endblock %}
+{% set active_page = 'reassign' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% block content %}
+<div class="page-header-row">
+  <div>
+    <h1 class="page-title">Reassignment Management</h1>
+    <p class="page-subtitle">Request reassignment of submissions to other reviewers</p>
+  </div>
+</div>
+
+<!-- Info banner -->
+<div class="rv-info-banner">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;flex-shrink:0;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  <span>Reassignment requests are forwarded to the system administrator. Contact your admin to reassign submissions to another reviewer.</span>
+</div>
+
+<!-- Assigned submissions -->
+<div class="card" style="margin-top:1.25rem;">
+  <div class="card-header">
+    <h3>Your Assigned Submissions</h3>
+    <span class="rv-notif-count">{{ submissions | length }}</span>
+  </div>
+  {% if submissions %}
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Faculty</th>
+          <th>Document</th>
+          <th>KRA</th>
+          <th>Status</th>
+          <th>Submitted</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in submissions %}
+        <tr>
+          <td>
+            <div class="rv-faculty-cell">
+              <span class="rv-avatar">{{ s.faculty_name[:1] }}</span>
+              <div>
+                <div class="rv-faculty-cell__name">{{ s.faculty_name }}</div>
+                {% if s.faculty_email %}<div class="rv-cell-sub">{{ s.faculty_email }}</div>{% endif %}
+              </div>
+            </div>
+          </td>
+          <td><span class="rv-doc-title">{{ s.document_title }}</span></td>
+          <td><span class="kra-tag kra-{{ s.kra_type | lower | replace(' ','-') | replace(',','') | replace('/','') | replace('&','') }}">{{ s.kra_type or '—' }}</span></td>
+          <td>{{ status_badge(s.status) }}</td>
+          <td class="rv-cell-muted">{{ s.submitted_at[:10] if s.submitted_at else '—' }}</td>
+          <td>
+            <div class="rv-action-group">
+              <a href="{{ url_for('reviewer_review', sub_id=s.id) }}" class="btn btn-sm btn-primary">Review</a>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="rv-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/></svg>
+    <p>No submissions currently assigned to you.</p>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Other reviewers -->
+{% if reviewers %}
+<div class="card" style="margin-top:1.25rem;">
+  <div class="card-header"><h3>Other Reviewers</h3></div>
+  <div class="data-table-wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Reviewer</th>
+          <th>Email</th>
+          <th>Assigned Submissions</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in reviewers %}
+        <tr>
+          <td>
+            <div class="rv-faculty-cell">
+              <span class="rv-avatar">{{ r.full_name[:1] }}</span>
+              <div class="rv-faculty-cell__name">{{ r.full_name }}</div>
+            </div>
+          </td>
+          <td class="rv-cell-muted">{{ r.email }}</td>
+          <td>{{ r.review_count }}</td>
+          <td><span class="status-tag {% if r.active %}status-approved{% else %}status-rejected{% endif %}">{% if r.active %}Active{% else %}Inactive{% endif %}</span></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

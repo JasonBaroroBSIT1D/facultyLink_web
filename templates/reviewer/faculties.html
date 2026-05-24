@@ -1,0 +1,298 @@
+{% extends "base_dashboard.html" %}
+{% block title %}Faculties — FacultyLink{% endblock %}
+{% set active_page = 'faculties' %}
+{% block sidebar_nav %}{% include "reviewer/_nav.html" %}{% endblock %}
+{% from 'macros.html' import status_badge %}
+
+{% macro kra_slug(kra) %}{{ kra | lower | replace(' ', '-') | replace(',', '') | replace('/', '') | replace('&', '') | replace('  ', '-') }}{% endmacro %}
+
+{% block content %}
+<div class="page-header-row">
+  <div>
+    <h1 class="page-title">Faculties</h1>
+    <p class="page-subtitle">Faculty records, profiles, and submitted documentary evidence</p>
+  </div>
+  <div style="display:flex;gap:0.5rem;">
+    <button type="button" class="btn btn-secondary btn-sm" id="facExpandAll">Expand All</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="facCollapseAll">Collapse All</button>
+  </div>
+</div>
+
+<!-- Summary row -->
+<div class="rv-fac-summary-row">
+  <div class="rv-fac-summary-card">
+    <span class="rv-fac-summary-num">{{ faculty_list | length }}</span>
+    <span class="rv-fac-summary-label">Total Faculty</span>
+  </div>
+  <div class="rv-fac-summary-card rv-fac-summary-card--warn">
+    <span class="rv-fac-summary-num">{{ total_pending }}</span>
+    <span class="rv-fac-summary-label">Pending Reviews</span>
+  </div>
+  <div class="rv-fac-summary-card rv-fac-summary-card--success">
+    <span class="rv-fac-summary-num">{{ total_approved }}</span>
+    <span class="rv-fac-summary-label">Approved</span>
+  </div>
+  <div class="rv-fac-summary-card rv-fac-summary-card--danger">
+    <span class="rv-fac-summary-num">{{ total_rejected }}</span>
+    <span class="rv-fac-summary-label">Rejected</span>
+  </div>
+  <div class="rv-fac-summary-card">
+    <span class="rv-fac-summary-num">{{ total_docs }}</span>
+    <span class="rv-fac-summary-label">Total Documents</span>
+  </div>
+</div>
+
+<!-- Search bar -->
+<div class="rv-fac-search-bar">
+  <div class="rv-search-wrap" style="max-width:380px;">
+    <svg class="rv-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" id="facSearchInput" placeholder="Search faculty name or document…" class="rv-search-input" autocomplete="off">
+  </div>
+  <div class="rv-fac-filter-chips">
+    <button type="button" class="filter-chip active" data-filter="">All</button>
+    <button type="button" class="filter-chip" data-filter="pending">Pending</button>
+    <button type="button" class="filter-chip" data-filter="approved">Approved</button>
+    <button type="button" class="filter-chip" data-filter="rejected">Rejected</button>
+  </div>
+</div>
+
+<!-- Faculty folder list -->
+{% if faculty_list %}
+<div class="rv-fac-folders" id="facFolders">
+  {% for fac in faculty_list %}
+  <div class="rv-fac-folder" id="fac-{{ loop.index }}"
+       data-name="{{ fac.faculty_name | lower }}"
+       data-email="{{ (fac.faculty_email or '') | lower }}">
+
+    <!-- Faculty folder header -->
+    <button type="button"
+            class="rv-fac-folder__header"
+            aria-expanded="false"
+            aria-controls="fac-body-{{ loop.index }}">
+      <div class="rv-fac-folder__left">
+        <span class="rv-fac-avatar" aria-hidden="true">{{ fac.faculty_name[:1] }}</span>
+        <div class="rv-fac-folder__info">
+          <span class="rv-fac-folder__name">{{ fac.faculty_name }}</span>
+          {% if fac.faculty_email %}
+          <span class="rv-fac-folder__email">{{ fac.faculty_email }}</span>
+          {% endif %}
+        </div>
+        <div class="rv-fac-folder__badges">
+          <span class="rv-fac-doc-count">{{ fac.docs | length }} doc{{ 's' if fac.docs | length != 1 }}</span>
+          {% if fac.pending > 0 %}
+          <span class="rv-fac-badge rv-fac-badge--pending">{{ fac.pending }} pending</span>
+          {% endif %}
+          {% if fac.approved > 0 %}
+          <span class="rv-fac-badge rv-fac-badge--approved">{{ fac.approved }} approved</span>
+          {% endif %}
+          {% if fac.rejected > 0 %}
+          <span class="rv-fac-badge rv-fac-badge--rejected">{{ fac.rejected }} rejected</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="rv-fac-folder__right">
+        <!-- KRA tags summary -->
+        <div class="rv-fac-kra-tags">
+          {% set kra_seen = [] %}
+          {% for d in fac.docs %}
+            {% if d.kra_type and d.kra_type not in kra_seen %}
+              {% set _ = kra_seen.append(d.kra_type) %}
+              <span class="kra-tag kra-{{ kra_slug(d.kra_type) }}">{{ d.kra_type }}</span>
+            {% endif %}
+          {% endfor %}
+        </div>
+        <span class="rv-fac-folder__chevron" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px;display:block;transition:transform 0.2s;">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </span>
+      </div>
+    </button>
+
+    <!-- Faculty folder body -->
+    <div class="rv-fac-folder__body rv-fac-collapsed" id="fac-body-{{ loop.index }}">
+
+      <!-- Faculty profile strip -->
+      <div class="rv-fac-profile-strip">
+        <div class="rv-fac-profile-strip__col">
+          <span class="rv-fac-profile-strip__label">Full Name</span>
+          <span class="rv-fac-profile-strip__val">{{ fac.faculty_name }}</span>
+        </div>
+        <div class="rv-fac-profile-strip__col">
+          <span class="rv-fac-profile-strip__label">Email</span>
+          <span class="rv-fac-profile-strip__val">{{ fac.faculty_email or '—' }}</span>
+        </div>
+        <div class="rv-fac-profile-strip__col">
+          <span class="rv-fac-profile-strip__label">Total Submissions</span>
+          <span class="rv-fac-profile-strip__val">{{ fac.docs | length }}</span>
+        </div>
+        <div class="rv-fac-profile-strip__col">
+          <span class="rv-fac-profile-strip__label">Compliance</span>
+          <span class="rv-fac-profile-strip__val">
+            {% set compliant_count = fac.docs | selectattr('compliance_status', 'equalto', 'compliant') | list | length %}
+            {% if compliant_count == fac.docs | length and fac.docs | length > 0 %}
+              <span class="status-tag status-approved">Compliant</span>
+            {% elif compliant_count > 0 %}
+              <span class="status-tag status-under_review">Partial</span>
+            {% else %}
+              <span class="status-tag status-pending">Pending</span>
+            {% endif %}
+          </span>
+        </div>
+        <div class="rv-fac-profile-strip__col">
+          <a href="{{ url_for('reviewer_submissions') }}?q={{ fac.faculty_name | urlencode }}" class="btn btn-sm btn-secondary">
+            View Submissions
+          </a>
+        </div>
+      </div>
+
+      <!-- Documents table -->
+      {% if fac.docs %}
+      <div class="data-table-wrap" style="margin:0 1.25rem 1.25rem;">
+        <table class="data-table rv-fac-docs-table">
+          <thead>
+            <tr>
+              <th>Document</th>
+              <th>KRA</th>
+              <th>Submitted</th>
+              <th>Compliance</th>
+              <th>OCR</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for d in fac.docs %}
+            {% set conf = d.ocr_confidence | float %}
+            <tr class="rv-fac-doc-row" data-status="{{ d.status }}">
+              <td>
+                <span class="rv-doc-title">{{ d.document_title }}</span>
+                {% if d.reviewer_comments %}
+                <div class="rv-cell-sub rv-cell-sub--comment" title="{{ d.reviewer_comments }}">
+                  💬 {{ d.reviewer_comments[:55] }}{% if d.reviewer_comments | length > 55 %}…{% endif %}
+                </div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="kra-tag kra-{{ kra_slug(d.kra_type or '') }}">{{ d.kra_type or '—' }}</span>
+              </td>
+              <td class="rv-cell-muted">{{ d.submitted_at[:10] if d.submitted_at else '—' }}</td>
+              <td>
+                <span class="status-tag status-{{ d.compliance_status }}">{{ d.compliance_status | replace('_',' ') | title }}</span>
+              </td>
+              <td>
+                <div class="rv-ocr-cell">
+                  <div class="rv-ocr-bar">
+                    <div class="rv-ocr-bar__fill {% if conf >= 80 %}rv-ocr-bar__fill--high{% elif conf >= 60 %}rv-ocr-bar__fill--mid{% else %}rv-ocr-bar__fill--low{% endif %}"
+                         style="width:{{ [conf,100]|min }}%"></div>
+                  </div>
+                  <span class="rv-ocr-pct {% if conf >= 80 %}rv-ocr-pct--high{% elif conf >= 60 %}rv-ocr-pct--mid{% else %}rv-ocr-pct--low{% endif %}">{{ '%.0f'|format(conf) }}%</span>
+                </div>
+              </td>
+              <td>{{ status_badge(d.status) }}</td>
+              <td>
+                <div class="rv-action-group">
+                  <a href="{{ url_for('reviewer_review', sub_id=d.id) }}" class="btn btn-sm btn-primary">Review</a>
+                  <a href="{{ url_for('reviewer_ocr', sub_id=d.id) }}" class="btn btn-sm btn-secondary">OCR</a>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="rv-fac-folder__empty">No documents submitted by this faculty member yet.</div>
+      {% endif %}
+
+    </div>
+    <!-- end folder body -->
+  </div>
+  <!-- end rv-fac-folder -->
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="card">
+  <div class="rv-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+    <p>No faculty records found.</p>
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  // ── Accordion toggle ──────────────────────────────────────
+  function toggleFolder(btn) {
+    const expanded = btn.getAttribute('aria-expanded') === 'true';
+    const bodyId   = btn.getAttribute('aria-controls');
+    const body     = document.getElementById(bodyId);
+    const chevron  = btn.querySelector('.rv-fac-folder__chevron svg');
+    btn.setAttribute('aria-expanded', String(!expanded));
+    if (body) body.classList.toggle('rv-fac-collapsed', expanded);
+    if (chevron) chevron.style.transform = expanded ? '' : 'rotate(180deg)';
+  }
+
+  document.querySelectorAll('.rv-fac-folder__header').forEach(btn => {
+    btn.addEventListener('click', () => toggleFolder(btn));
+  });
+
+  // ── Expand / Collapse All ─────────────────────────────────
+  function setAll(expand) {
+    document.querySelectorAll('.rv-fac-folder__header').forEach(btn => {
+      const body    = document.getElementById(btn.getAttribute('aria-controls'));
+      const chevron = btn.querySelector('.rv-fac-folder__chevron svg');
+      btn.setAttribute('aria-expanded', String(expand));
+      if (body) body.classList.toggle('rv-fac-collapsed', !expand);
+      if (chevron) chevron.style.transform = expand ? 'rotate(180deg)' : '';
+    });
+  }
+
+  const expandBtn   = document.getElementById('facExpandAll');
+  const collapseBtn = document.getElementById('facCollapseAll');
+  if (expandBtn)   expandBtn.addEventListener('click', () => setAll(true));
+  if (collapseBtn) collapseBtn.addEventListener('click', () => setAll(false));
+
+  // ── Live search ───────────────────────────────────────────
+  const searchInput = document.getElementById('facSearchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const term = searchInput.value.toLowerCase().trim();
+      document.querySelectorAll('.rv-fac-folder').forEach(folder => {
+        const name  = folder.dataset.name  || '';
+        const email = folder.dataset.email || '';
+        const docText = folder.textContent.toLowerCase();
+        const show = !term || name.includes(term) || email.includes(term) || docText.includes(term);
+        folder.style.display = show ? '' : 'none';
+      });
+    });
+  }
+
+  // ── Status filter chips ───────────────────────────────────
+  document.querySelectorAll('.rv-fac-filter-chips .filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      document.querySelectorAll('.rv-fac-filter-chips .filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+      const filter = chip.dataset.filter;
+      document.querySelectorAll('.rv-fac-folder').forEach(folder => {
+        if (!filter) {
+          folder.style.display = '';
+          return;
+        }
+        // Show folder if it has at least one doc matching the filter
+        const rows = folder.querySelectorAll('.rv-fac-doc-row');
+        let hasMatch = false;
+        rows.forEach(row => {
+          if (row.dataset.status === filter) hasMatch = true;
+        });
+        folder.style.display = hasMatch ? '' : 'none';
+      });
+    });
+  });
+})();
+</script>
+{% endblock %}
