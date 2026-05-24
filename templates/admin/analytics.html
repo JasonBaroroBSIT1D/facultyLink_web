@@ -3,6 +3,11 @@
 {% block sidebar_nav %}{% include "admin/_nav.html" %}{% endblock %}
 {% set active_page = 'analytics' %}
 
+{% block extra_head %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+{% endblock %}
+
 {% block content %}
 <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem; margin-bottom:0.25rem;">
   <div>
@@ -10,9 +15,9 @@
     <p class="page-subtitle" style="margin-bottom:0;">Strategic evaluation insights — DBM–CHED Joint Circular performance framework</p>
   </div>
   <div style="display:flex; gap:0.5rem; align-items:center; flex-shrink:0;">
-    <button onclick="window.print()" class="btn btn-secondary btn-sm">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
-      Print Report
+    <button id="downloadPdfBtn" onclick="downloadAnalyticsPDF()" class="btn btn-secondary btn-sm" style="cursor:pointer;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <span id="pdfBtnLabel">Download PDF</span>
     </button>
     <a href="{{ url_for('admin_submissions') }}" class="btn btn-secondary btn-sm">View Submissions →</a>
   </div>
@@ -276,31 +281,187 @@
 
 {% block extra_js %}
 <script>
+// ── PDF download ──────────────────────────────────────────────
+async function downloadAnalyticsPDF() {
+  const btn   = document.getElementById('downloadPdfBtn');
+  const label = document.getElementById('pdfBtnLabel');
+  btn.disabled = true;
+  label.textContent = 'Generating…';
+
+  try {
+    const { jsPDF } = window.jspdf;
+    const pdf    = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW  = pdf.internal.pageSize.getWidth();
+    const pageH  = pdf.internal.pageSize.getHeight();
+    const margin = 14;
+    const usableW = pageW - margin * 2;
+    let y = margin;
+
+    const navy  = [0, 45, 79];
+    const muted = [107, 124, 143];
+    const borderC = [226, 232, 240];
+
+    // Header bar
+    pdf.setFillColor(...navy);
+    pdf.rect(0, 0, pageW, 22, 'F');
+    pdf.setTextColor(255, 255, 255);
+    pdf.setFontSize(14);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('FacultyLink', margin, 10);
+    pdf.setFontSize(9);
+    pdf.setFont('helvetica', 'normal');
+    pdf.text('Reports & Analytics — DBM–CHED Joint Circular Framework', margin, 16);
+    const now     = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+    const timeStr = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    pdf.text(`Generated: ${dateStr} ${timeStr}`, pageW - margin, 16, { align: 'right' });
+    y = 30;
+
+    // KPI section
+    pdf.setTextColor(...navy);
+    pdf.setFontSize(11);
+    pdf.setFont('helvetica', 'bold');
+    pdf.text('Key Performance Indicators', margin, y);
+    y += 6;
+
+    const kpiCards = document.querySelectorAll('.analytics-kpi');
+    const colW = (usableW - 4) / 2;
+    let col = 0, rowStartY = y;
+
+    kpiCards.forEach((card) => {
+      const lbl   = card.querySelector('.label')?.textContent?.trim() || '';
+      const val   = card.querySelector('.value')?.textContent?.trim() || '';
+      const trend = card.querySelector('.kpi-trend')?.textContent?.trim() || '';
+      const x = margin + col * (colW + 4);
+
+      pdf.setDrawColor(...borderC);
+      pdf.setFillColor(248, 249, 250);
+      pdf.roundedRect(x, rowStartY, colW, 18, 2, 2, 'FD');
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...muted);
+      pdf.text(lbl.toUpperCase(), x + 4, rowStartY + 5);
+      pdf.setFontSize(13);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...navy);
+      pdf.text(val, x + 4, rowStartY + 12);
+      pdf.setFontSize(7);
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(...muted);
+      pdf.text(trend, x + 4, rowStartY + 17);
+
+      col++;
+      if (col === 2) { col = 0; rowStartY += 22; }
+    });
+    y = rowStartY + (col > 0 ? 22 : 0) + 6;
+
+    // Capture a canvas and add to PDF
+    const addChart = async (canvasId, title, chartH) => {
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) return;
+      if (y + chartH + 14 > pageH - margin) { pdf.addPage(); y = margin; }
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...navy);
+      pdf.text(title, margin, y);
+      y += 4;
+      const imgData = canvas.toDataURL('image/png', 1.0);
+      pdf.addImage(imgData, 'PNG', margin, y, usableW, chartH);
+      y += chartH + 8;
+    };
+
+    await addChart('monthlyChart',    'Monthly Submission Trends',        52);
+    await addChart('complianceChart', 'Compliance Status Distribution',   52);
+    await addChart('kraChart',        'KRA Performance Analysis',         48);
+    await addChart('statusChart',     'Evaluation Status Overview',       52);
+
+    // Reviewer table
+    const reviewerRows = [];
+    document.querySelectorAll('.data-table tbody tr').forEach(tr => {
+      const cells = tr.querySelectorAll('td');
+      if (cells.length >= 6) {
+        reviewerRows.push([
+          cells[0]?.textContent?.trim(),
+          cells[1]?.textContent?.trim(),
+          cells[2]?.textContent?.trim(),
+          cells[3]?.textContent?.trim(),
+          cells[4]?.textContent?.trim(),
+          cells[6]?.textContent?.trim() || '',
+        ]);
+      }
+    });
+
+    if (reviewerRows.length) {
+      const rowH = 7;
+      if (y + (reviewerRows.length + 1) * rowH + 14 > pageH - margin) { pdf.addPage(); y = margin; }
+      pdf.setFontSize(10); pdf.setFont('helvetica', 'bold');
+      pdf.setTextColor(...navy);
+      pdf.text('Reviewer Activity Statistics', margin, y);
+      y += 5;
+
+      const headers   = ['Reviewer', 'Total', 'Approved', 'Rejected', 'Pending', 'Workload'];
+      const colWidths = [52, 18, 22, 22, 22, 28];
+
+      pdf.setFillColor(...navy);
+      pdf.rect(margin, y, usableW, rowH, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(7); pdf.setFont('helvetica', 'bold');
+      let cx = margin + 2;
+      headers.forEach((h, i) => { pdf.text(h, cx, y + 5); cx += colWidths[i]; });
+      y += rowH;
+
+      reviewerRows.forEach((row, ri) => {
+        if (y + rowH > pageH - margin) { pdf.addPage(); y = margin; }
+        pdf.setFillColor(ri % 2 === 0 ? 255 : 248, ri % 2 === 0 ? 255 : 249, ri % 2 === 0 ? 255 : 250);
+        pdf.rect(margin, y, usableW, rowH, 'F');
+        pdf.setDrawColor(...borderC);
+        pdf.rect(margin, y, usableW, rowH, 'S');
+        pdf.setTextColor(...navy); pdf.setFont('helvetica', 'normal'); pdf.setFontSize(7.5);
+        cx = margin + 2;
+        row.forEach((cell, i) => { pdf.text(String(cell ?? ''), cx, y + 5); cx += colWidths[i]; });
+        y += rowH;
+      });
+    }
+
+    // Footer on every page
+    const totalPages = pdf.internal.getNumberOfPages();
+    for (let p = 1; p <= totalPages; p++) {
+      pdf.setPage(p);
+      pdf.setDrawColor(...borderC);
+      pdf.line(margin, pageH - 10, pageW - margin, pageH - 10);
+      pdf.setFontSize(7); pdf.setFont('helvetica', 'normal'); pdf.setTextColor(...muted);
+      pdf.text('FacultyLink — Confidential Analytics Report', margin, pageH - 5);
+      pdf.text(`Page ${p} of ${totalPages}`, pageW - margin, pageH - 5, { align: 'right' });
+    }
+
+    pdf.save(`FacultyLink_Analytics_Report_${dateStr}.pdf`);
+
+  } catch (err) {
+    console.error('PDF generation failed:', err);
+    alert('PDF generation failed. Please try again.');
+  } finally {
+    btn.disabled = false;
+    label.textContent = 'Download PDF';
+  }
+}
+
+// ── Charts ────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
-  // Monthly trend — bar chart
   const monthlyEl = document.getElementById('monthlyChart');
   if (monthlyEl && typeof Chart !== 'undefined') {
     new Chart(monthlyEl, {
       type: 'bar',
       data: {
         labels: JSON.parse(monthlyEl.dataset.labels || '[]'),
-        datasets: [{
-          label: 'Submissions',
-          data: JSON.parse(monthlyEl.dataset.values || '[]'),
-          backgroundColor: '#002D4F',
-          borderRadius: 5,
-          borderSkipped: false,
-        }]
+        datasets: [{ label: 'Submissions', data: JSON.parse(monthlyEl.dataset.values || '[]'),
+          backgroundColor: '#002D4F', borderRadius: 5, borderSkipped: false }]
       },
-      options: {
-        responsive: true, maintainAspectRatio: false,
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
         plugins: { legend: { display: false } },
-        scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } }
-      }
+        scales: { y: { beginAtZero: true, grid: { color: '#f1f5f9' } }, x: { grid: { display: false } } } }
     });
   }
 
-  // Compliance — doughnut
   const compEl = document.getElementById('complianceChart');
   if (compEl && typeof Chart !== 'undefined') {
     new Chart(compEl, {
@@ -310,34 +471,27 @@ document.addEventListener('DOMContentLoaded', () => {
         datasets: [{ data: JSON.parse(compEl.dataset.values || '[]'),
           backgroundColor: ['#22c55e','#ef4444','#f59e0b','#94a3b8'], borderWidth: 2 }]
       },
-      options: { responsive: true, maintainAspectRatio: false,
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
         plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } } } }
     });
   }
 
-  // KRA avg confidence — horizontal bar
   const kraEl = document.getElementById('kraChart');
   if (kraEl && typeof Chart !== 'undefined') {
     new Chart(kraEl, {
       type: 'bar',
       data: {
         labels: JSON.parse(kraEl.dataset.labels || '[]'),
-        datasets: [{
-          label: 'Avg OCR Confidence (%)',
+        datasets: [{ label: 'Avg OCR Confidence (%)',
           data: JSON.parse(kraEl.dataset.values || '[]').map(v => parseFloat(v || 0).toFixed(1)),
-          backgroundColor: ['#4a9fd4','#002D4F','#22c55e','#f59e0b'],
-          borderRadius: 4,
-        }]
+          backgroundColor: ['#4a9fd4','#002D4F','#22c55e','#f59e0b'], borderRadius: 4 }]
       },
-      options: {
-        indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
         plugins: { legend: { display: false } },
-        scales: { x: { beginAtZero: true, max: 100, grid: { color: '#f1f5f9' } }, y: { grid: { display: false } } }
-      }
+        scales: { x: { beginAtZero: true, max: 100, grid: { color: '#f1f5f9' } }, y: { grid: { display: false } } } }
     });
   }
 
-  // Status — doughnut
   const statusEl = document.getElementById('statusChart');
   if (statusEl && typeof Chart !== 'undefined') {
     new Chart(statusEl, {
@@ -347,7 +501,7 @@ document.addEventListener('DOMContentLoaded', () => {
         datasets: [{ data: JSON.parse(statusEl.dataset.values || '[]'),
           backgroundColor: ['#f59e0b','#22c55e','#ef4444','#4a9fd4'], borderWidth: 2 }]
       },
-      options: { responsive: true, maintainAspectRatio: false,
+      options: { responsive: true, maintainAspectRatio: false, animation: { duration: 0 },
         plugins: { legend: { position: 'bottom', labels: { font: { size: 11 }, boxWidth: 12 } } } }
     });
   }

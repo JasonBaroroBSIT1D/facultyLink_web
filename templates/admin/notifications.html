@@ -1,44 +1,213 @@
 {% extends "base_dashboard.html" %}
-{% block title %}Notification Management — FacultyLink{% endblock %}
+{% block title %}Notifications — FacultyLink{% endblock %}
 {% block sidebar_nav %}{% include "admin/_nav.html" %}{% endblock %}
 {% set active_page = 'notifications' %}
 
 {% block content %}
-<h1 class="page-title">Notification Management</h1>
-<p class="page-subtitle">Submission alerts, validation updates, and system announcements</p>
+<div class="page-header-row">
+  <div>
+    <h1 class="page-title">Notifications</h1>
+    <p class="page-subtitle">System alerts, activity updates, and announcements</p>
+  </div>
+  <button type="button" class="btn btn-secondary" id="publishToggleBtn">+ Publish Announcement</button>
+</div>
 
-<div class="card" style="margin-bottom:1.5rem;">
+<!-- Publish form (collapsed by default) -->
+<div class="card notif-publish-panel" id="publishPanel" style="display:none;margin-bottom:1.5rem;">
   <div class="card-header"><h3>Publish System Announcement</h3></div>
   <form method="POST" class="form-panel">
-    <div class="form-group">
-      <label>Title</label>
-      <input type="text" name="title" required placeholder="System announcement title">
+    <div class="form-row">
+      <div class="form-group" style="flex:2">
+        <label>Title</label>
+        <input type="text" name="title" required placeholder="Announcement title">
+      </div>
+      <div class="form-group" style="flex:1">
+        <label>Type</label>
+        <select name="type">
+          <option value="info">Info</option>
+          <option value="warning">Warning</option>
+          <option value="reminder">Reminder</option>
+          <option value="success">Success</option>
+          <option value="error">Error</option>
+        </select>
+      </div>
     </div>
     <div class="form-group">
       <label>Message</label>
-      <textarea name="message" placeholder="Announcement details..."></textarea>
+      <textarea name="message" rows="2" placeholder="Announcement details…"></textarea>
     </div>
-    <div class="form-group">
-      <label>Type</label>
-      <select name="type">
-        <option value="info">Info</option>
-        <option value="warning">Warning</option>
-        <option value="urgent">Urgent</option>
-        <option value="success">Success</option>
-      </select>
+    <div style="display:flex;gap:0.75rem;">
+      <button type="submit" class="btn btn-primary">Publish</button>
+      <button type="button" class="btn btn-secondary" id="publishCancelBtn">Cancel</button>
     </div>
-    <button type="submit" class="btn btn-primary">Publish</button>
   </form>
 </div>
 
-<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1rem;">
+<!-- Stats row -->
+<div class="notif-stats-row">
+  <div class="notif-stat-card">
+    <span class="notif-stat-num">{{ notifications | length }}</span>
+    <span class="notif-stat-label">Total</span>
+  </div>
+  <div class="notif-stat-card">
+    <span class="notif-stat-num">{{ unread_count }}</span>
+    <span class="notif-stat-label">Unread</span>
+  </div>
+  <div class="notif-stat-card">
+    <span class="notif-stat-num">{{ notifications | selectattr('category','equalto','warning') | list | length }}</span>
+    <span class="notif-stat-label">Warnings</span>
+  </div>
+  <div class="notif-stat-card">
+    <span class="notif-stat-num">{{ notifications | selectattr('category','equalto','error') | list | length }}</span>
+    <span class="notif-stat-label">Errors</span>
+  </div>
+</div>
+
+<!-- Filters & Search -->
+<div class="notif-toolbar">
+  <form method="GET" class="notif-filter-form" id="notifFilterForm">
+    <div class="notif-search-wrap">
+      <input type="search" name="q" value="{{ search_q }}" placeholder="Search notifications…" class="notif-search-input" id="notifSearchInput">
+    </div>
+    <div class="notif-filter-chips">
+      <a href="{{ url_for('admin_notifications') }}" class="filter-chip {% if not active_type %}active{% endif %}">All</a>
+      <a href="{{ url_for('admin_notifications', type='info', read=active_read, q=search_q) }}" class="filter-chip info {% if active_type=='info' %}active{% endif %}">Info</a>
+      <a href="{{ url_for('admin_notifications', type='warning', read=active_read, q=search_q) }}" class="filter-chip warning {% if active_type=='warning' %}active{% endif %}">Warning</a>
+      <a href="{{ url_for('admin_notifications', type='reminder', read=active_read, q=search_q) }}" class="filter-chip reminder {% if active_type=='reminder' %}active{% endif %}">Reminder</a>
+      <a href="{{ url_for('admin_notifications', type='success', read=active_read, q=search_q) }}" class="filter-chip success {% if active_type=='success' %}active{% endif %}">Success</a>
+      <a href="{{ url_for('admin_notifications', type='error', read=active_read, q=search_q) }}" class="filter-chip error {% if active_type=='error' %}active{% endif %}">Error</a>
+    </div>
+    <div class="notif-filter-chips">
+      <a href="{{ url_for('admin_notifications', type=active_type, q=search_q) }}" class="filter-chip {% if not active_read %}active{% endif %}">All Status</a>
+      <a href="{{ url_for('admin_notifications', type=active_type, read='unread', q=search_q) }}" class="filter-chip {% if active_read=='unread' %}active{% endif %}">Unread</a>
+      <a href="{{ url_for('admin_notifications', type=active_type, read='read', q=search_q) }}" class="filter-chip {% if active_read=='read' %}active{% endif %}">Read</a>
+    </div>
+  </form>
+  <div class="notif-bulk-actions">
+    <button type="button" class="btn btn-secondary btn-sm" id="markAllReadBtn">Mark all as read</button>
+  </div>
+</div>
+
+<!-- Notification Cards -->
+{% if notifications %}
+<div class="notif-cards-grid" id="notifCardsGrid">
   {% for n in notifications %}
-  <div class="card">
-    <span class="notif-dot {{ n.type }}" style="display:inline-block;margin-bottom:0.5rem;"></span>
-    <h3 style="font-size:0.95rem;margin-bottom:0.35rem;">{{ n.title }}</h3>
-    <p style="font-size:0.85rem;color:var(--text-muted);">{{ n.message }}</p>
-    <span class="time" style="font-size:0.7rem;color:var(--text-light);">{{ n.created_at }}</span>
+  <div class="notif-card {% if not n.read %}notif-card--unread{% endif %} notif-card--{{ n.category or n.type }}" data-id="{{ n.id }}" id="notif-card-{{ n.id }}">
+    <div class="notif-card__icon-col">
+      <span class="notif-type-icon notif-type-icon--{{ n.category or n.type }}" aria-hidden="true">
+        {% if (n.category or n.type) == 'warning' %}⚠️
+        {% elif (n.category or n.type) == 'error' %}🚨
+        {% elif (n.category or n.type) == 'success' %}✅
+        {% elif (n.category or n.type) == 'reminder' %}🔔
+        {% else %}ℹ️{% endif %}
+      </span>
+    </div>
+    <div class="notif-card__body">
+      <div class="notif-card__top">
+        <span class="notif-card__title">{{ n.title }}</span>
+        <span class="notif-type-badge notif-type-badge--{{ n.category or n.type }}">{{ (n.category or n.type) | title }}</span>
+        {% if not n.read %}<span class="notif-unread-dot" aria-label="Unread"></span>{% endif %}
+      </div>
+      <p class="notif-card__message">{{ n.message }}</p>
+      <span class="notif-card__time">{{ n.created_at }}</span>
+    </div>
+    <div class="notif-card__actions">
+      {% if not n.read %}
+      <button type="button" class="notif-action-btn notif-mark-read-btn" data-id="{{ n.id }}" title="Mark as read" aria-label="Mark as read">✓</button>
+      {% endif %}
+      <button type="button" class="notif-action-btn notif-delete-btn" data-id="{{ n.id }}" title="Delete" aria-label="Delete notification">✕</button>
+    </div>
   </div>
   {% endfor %}
 </div>
+{% else %}
+<div class="notif-empty-state">
+  <span style="font-size:2.5rem;">🔔</span>
+  <p>No notifications found.</p>
+  {% if active_type or active_read or search_q %}
+  <a href="{{ url_for('admin_notifications') }}" class="btn btn-secondary btn-sm">Clear filters</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+  // Publish panel toggle
+  const publishBtn = document.getElementById('publishToggleBtn');
+  const publishPanel = document.getElementById('publishPanel');
+  const cancelBtn = document.getElementById('publishCancelBtn');
+  if (publishBtn) {
+    publishBtn.addEventListener('click', () => {
+      publishPanel.style.display = publishPanel.style.display === 'none' ? 'block' : 'none';
+    });
+  }
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => { publishPanel.style.display = 'none'; });
+  }
+
+  // Search with debounce
+  const searchInput = document.getElementById('notifSearchInput');
+  if (searchInput) {
+    let timer;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.set('q', searchInput.value);
+        window.location.href = url.toString();
+      }, 500);
+    });
+  }
+
+  // Mark single as read
+  document.querySelectorAll('.notif-mark-read-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      await fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const card = document.getElementById('notif-card-' + id);
+      if (card) {
+        card.classList.remove('notif-card--unread');
+        btn.remove();
+        const dot = card.querySelector('.notif-unread-dot');
+        if (dot) dot.remove();
+      }
+    });
+  });
+
+  // Delete notification
+  document.querySelectorAll('.notif-delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.dataset.id;
+      await fetch('/api/notifications/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      const card = document.getElementById('notif-card-' + id);
+      if (card) card.remove();
+    });
+  });
+
+  // Mark all as read
+  const markAllBtn = document.getElementById('markAllReadBtn');
+  if (markAllBtn) {
+    markAllBtn.addEventListener('click', async () => {
+      await fetch('/api/notifications/mark-read', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'all' }),
+      });
+      document.querySelectorAll('.notif-card--unread').forEach(c => c.classList.remove('notif-card--unread'));
+      document.querySelectorAll('.notif-unread-dot').forEach(d => d.remove());
+      document.querySelectorAll('.notif-mark-read-btn').forEach(b => b.remove());
+    });
+  }
+})();
+</script>
 {% endblock %}

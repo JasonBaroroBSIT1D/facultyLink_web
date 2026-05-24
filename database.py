@@ -318,6 +318,7 @@ def init_db():
     conn.commit()
     migrate_faculty_role(conn)
     migrate_kra_rules_extended(conn)
+    migrate_notifications_category(conn)
     seed_data(conn)
     conn.close()
 
@@ -456,3 +457,22 @@ def log_action(user_id, action, details=""):
         (user_id, action, details),
     )
     conn.commit()
+
+
+def auto_notify(title, message, category="info"):
+    """Insert an automatic system notification. category: info|warning|reminder|success|error"""
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO notifications (title, message, type, category) VALUES (?, ?, ?, ?)",
+        (title, message, category, category),
+    )
+    conn.commit()
+
+
+def migrate_notifications_category(conn):
+    """Add category column to notifications if missing."""
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(notifications)").fetchall()}
+    if "category" not in cols:
+        conn.execute("ALTER TABLE notifications ADD COLUMN category TEXT DEFAULT 'info'")
+        conn.execute("UPDATE notifications SET category = type")
+        conn.commit()

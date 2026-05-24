@@ -38,7 +38,24 @@
           <button type="button" class="icon-btn profile-trigger" data-open-profile title="My Profile" aria-label="My Profile">
             <span class="profile-trigger__avatar" aria-hidden="true">{{ (g.user.full_name or 'U')[:1] }}</span>
           </button>
-          <a href="{{ url_for('admin_notifications') if g.user.role == 'admin' else url_for('reviewer_dashboard') }}" class="icon-btn" title="Notifications">🔔</a>
+          {% if g.user.role == 'admin' %}
+          <div class="notif-bell-wrap" id="notifBellWrap">
+            <button type="button" class="icon-btn notif-bell-btn" id="notifBellBtn" aria-label="Notifications" aria-expanded="false" aria-haspopup="true">
+              🔔
+              <span class="notif-badge" id="notifBadge" style="display:none">0</span>
+            </button>
+            <div class="notif-dropdown" id="notifDropdown" role="dialog" aria-label="Recent notifications" hidden>
+              <div class="notif-dropdown__header">
+                <span>Notifications</span>
+                <button type="button" class="notif-mark-all-btn" id="notifMarkAll">Mark all read</button>
+              </div>
+              <ul class="notif-dropdown__list" id="notifDropdownList">
+                <li class="notif-dropdown__empty">Loading…</li>
+              </ul>
+              <a href="{{ url_for('admin_notifications') }}" class="notif-dropdown__footer">View all notifications</a>
+            </div>
+          </div>
+          {% endif %}
           <a href="{{ url_for('logout') }}" class="logout-btn" title="Logout" aria-label="Logout">
             <svg class="logout-btn__icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>

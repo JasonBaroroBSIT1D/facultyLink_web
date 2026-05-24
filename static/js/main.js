@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initCharts();
   initChartToggle();
   initProfileModal();
+  initNotifBell();
 });
 
 function initPasswordToggle() {
@@ -153,4 +154,103 @@ function initAnalyticsCharts() {
 
 if (document.getElementById('statusChart')) {
   document.addEventListener('DOMContentLoaded', initAnalyticsCharts);
+}
+
+function initNotifBell() {
+  const wrap = document.getElementById('notifBellWrap');
+  const btn = document.getElementById('notifBellBtn');
+  const dropdown = document.getElementById('notifDropdown');
+  const badge = document.getElementById('notifBadge');
+  const list = document.getElementById('notifDropdownList');
+  const markAllBtn = document.getElementById('notifMarkAll');
+  if (!btn || !dropdown) return;
+
+  const CATEGORY_ICONS = { warning: '⚠️', error: '🚨', success: '✅', reminder: '🔔', info: 'ℹ️' };
+
+  async function fetchUnreadCount() {
+    try {
+      const res = await fetch('/api/notifications/unread-count');
+      const data = await res.json();
+      if (badge) {
+        badge.textContent = data.count > 99 ? '99+' : data.count;
+        badge.style.display = data.count > 0 ? 'flex' : 'none';
+      }
+    } catch (_) {}
+  }
+
+  async function loadDropdown() {
+    if (!list) return;
+    list.innerHTML = '<li class="notif-dropdown__empty">Loading…</li>';
+    try {
+      const res = await fetch('/api/notifications/recent');
+      const data = await res.json();
+      const items = data.notifications || [];
+      if (!items.length) {
+        list.innerHTML = '<li class="notif-dropdown__empty">No notifications yet.</li>';
+        return;
+      }
+      list.innerHTML = items.map(n => {
+        const cat = n.category || 'info';
+        const icon = CATEGORY_ICONS[cat] || 'ℹ️';
+        const unreadClass = n.read ? '' : 'notif-dropdown__item--unread';
+        return `<li class="notif-dropdown__item ${unreadClass}" data-id="${n.id}">
+          <span class="notif-dd-icon notif-dd-icon--${cat}">${icon}</span>
+          <div class="notif-dd-body">
+            <span class="notif-dd-title">${n.title}</span>
+            <span class="notif-dd-msg">${n.message || ''}</span>
+            <span class="notif-dd-time">${n.created_at}</span>
+          </div>
+          ${!n.read ? `<button class="notif-dd-read-btn" data-id="${n.id}" title="Mark read" aria-label="Mark read">✓</button>` : ''}
+        </li>`;
+      }).join('');
+
+      list.querySelectorAll('.notif-dd-read-btn').forEach(b => {
+        b.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const id = b.dataset.id;
+          await fetch('/api/notifications/mark-read', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id }),
+          });
+          const item = list.querySelector(`[data-id="${id}"]`);
+          if (item) item.classList.remove('notif-dropdown__item--unread');
+          b.remove();
+          fetchUnreadCount();
+        });
+      });
+    } catch (_) {
+      list.innerHTML = '<li class="notif-dropdown__empty">Could not load notifications.</li>';
+    }
+  }
+
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = !dropdown.hidden;
+    dropdown.hidden = isOpen;
+    btn.setAttribute('aria-expanded', String(!isOpen));
+    if (!isOpen) loadDropdown();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (wrap && !wrap.contains(e.target)) {
+      dropdown.hidden = true;
+      btn.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  if (markAllBtn) {
+    markAllBtn.addEventListener('click', async () => {
+      await fetch('/api/notifications/mark-read', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: 'all' }),
+      });
+      list.querySelectorAll('.notif-dropdown__item--unread').forEach(i => i.classList.remove('notif-dropdown__item--unread'));
+      list.querySelectorAll('.notif-dd-read-btn').forEach(b => b.remove());
+      fetchUnreadCount();
+    });
+  }
+
+  // Initial load + poll every 60s
+  fetchUnreadCount();
+  setInterval(fetchUnreadCount, 60000);
 }

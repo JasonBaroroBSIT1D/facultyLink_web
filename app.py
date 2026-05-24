@@ -9,7 +9,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from config import SECRET_KEY
 from database import (
     get_db, init_db, verify_user, log_action, close_db,
-    get_system_config, set_system_config, fetch_kra_rules,
+    get_system_config, set_system_config, fetch_kra_rules, auto_notify,
 )
 from kra_scoring import (
     rule_to_dict,
@@ -111,6 +111,7 @@ def forgot_password():
 @app.route("/admin/dashboard")
 @login_required("admin")
 def admin_dashboard():
+    _check_and_generate_auto_notifications()
     conn = get_db()
     stats = {
         "faculty": conn.execute("SELECT COUNT(DISTINCT faculty_email) FROM submissions").fetchone()[0],
@@ -432,13 +433,148 @@ def admin_notifications():
         ntype = request.form.get("type", "info")
         if title:
             conn.execute(
-                "INSERT INTO notifications (title, message, type) VALUES (?, ?, ?)",
-                (title, message, ntype),
+                "INSERT INTO notifications (title, message, type, category) VALUES (?, ?, ?, ?)",
+                (title, message, ntype, ntype),
             )
             conn.commit()
             flash("Announcement published.", "success")
-    rows = conn.execute("SELECT * FROM notifications ORDER BY created_at DESC").fetchall()
-    return render_template("admin/notifications.html", notifications=[dict(n) for n in rows])
+        return redirect(url_for("admin_notifications"))
+
+    # Filters
+    ftype = request.args.get("type", "")
+    fread = request.args.get("read", "")
+    q = request.args.get("q", "")
+
+    query = "SELECT * FROM notifications WHERE 1=1"
+    params = []
+    if ftype:
+        query += " AND category = ?"
+        params.append(ftype)
+    if fread == "unread":
+        query += " AND read = 0"
+    elif fread == "read":
+        query += " AND read = 1"
+    if q:
+        query += " AND (title LIKE ? OR message LIKE ?)"
+        params.extend([f"%{q}%", f"%{q}%"])
+    query += " ORDER BY created_at DESC"
+
+    rows = conn.execute(query, params).fetchall()
+    unread_count = conn.execute("SELECT COUNT(*) FROM notifications WHERE read=0").fetchone()[0]
+    return render_template(
+        "admin/notifications.html",
+        notifications=[dict(n) for n in rows],
+        unread_count=unread_count,
+        active_type=ftype,
+        active_read=fread,
+        search_q=q,
+    )
+
+
+@app.route("/api/notifications/unread-count")
+@login_required("admin")
+def api_notif_unread_count():
+    conn = get_db()
+    count = conn.execute("SELECT COUNT(*) FROM notifications WHERE read=0").fetchone()[0]
+    return jsonify({"count": count})
+
+
+@app.route("/api/notifications/recent")
+@login_required("admin")
+def api_notif_recent():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, title, message, category, read, created_at FROM notifications ORDER BY created_at DESC LIMIT 8"
+    ).fetchall()
+    return jsonify({"notifications": [dict(r) for r in rows]})
+
+
+@app.route("/api/notifications/mark-read", methods=["POST"])
+@login_required("admin")
+def api_notif_mark_read():
+    conn = get_db()
+    nid = request.json.get("id") if request.is_json else None
+    if nid == "all":
+        conn.execute("UPDATE notifications SET read=1")
+    elif nid:
+        conn.execute("UPDATE notifications SET read=1 WHERE id=?", (nid,))
+    conn.commit()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/notifications/delete", methods=["POST"])
+@login_required("admin")
+def api_notif_delete():
+    conn = get_db()
+    nid = request.json.get("id") if request.is_json else None
+    if nid:
+        conn.execute("DELETE FROM notifications WHERE id=?", (nid,))
+        conn.commit()
+    return jsonify({"ok": True})
+
+
+def _check_and_generate_auto_notifications():
+    """Generate automatic system notifications based on current system state."""
+    conn = get_db()
+
+    pending = conn.execute("SELECT COUNT(*) FROM submissions WHERE status='pending'").fetchone()[0]
+    if pending >= 5:
+        # Only notify if we haven't already sent this warning recently
+        existing = conn.execute(
+            "SELECT id FROM notifications WHERE title='High Pending Workload' "
+            "AND created_at > datetime('now', '-1 hour')"
+        ).fetchone()
+        if not existing:
+            auto_notify(
+                "High Pending Workload",
+                f"{pending} submissions are currently pending review.",
+                "warning",
+            )
+
+    rejected = conn.execute(
+        "SELECT COUNT(*) FROM submissions WHERE status='rejected'"
+    ).fetchone()[0]
+    if rejected > 0:
+        existing = conn.execute(
+            "SELECT id FROM notifications WHERE title='Submissions Require Revision' "
+            "AND created_at > datetime('now', '-6 hours')"
+        ).fetchone()
+        if not existing:
+            auto_notify(
+                "Submissions Require Revision",
+                f"{rejected} submission(s) were rejected and require faculty revision.",
+                "warning",
+            )
+
+    unassigned = conn.execute(
+        "SELECT COUNT(*) FROM submissions WHERE reviewer_id IS NULL AND status='pending'"
+    ).fetchone()[0]
+    if unassigned > 0:
+        existing = conn.execute(
+            "SELECT id FROM notifications WHERE title='Unassigned Submissions' "
+            "AND created_at > datetime('now', '-6 hours')"
+        ).fetchone()
+        if not existing:
+            auto_notify(
+                "Unassigned Submissions",
+                f"{unassigned} pending submission(s) have no reviewer assigned.",
+                "reminder",
+            )
+
+    non_compliant = conn.execute(
+        "SELECT COUNT(*) FROM submissions WHERE compliance_status='non_compliant'"
+    ).fetchone()[0]
+    if non_compliant > 0:
+        existing = conn.execute(
+            "SELECT id FROM notifications WHERE title='Incomplete Faculty Requirements' "
+            "AND created_at > datetime('now', '-6 hours')"
+        ).fetchone()
+        if not existing:
+            auto_notify(
+                "Incomplete Faculty Requirements",
+                f"{non_compliant} submission(s) are marked non-compliant with missing requirements.",
+                "error",
+            )
 
 
 @app.route("/admin/audit-logs")
@@ -566,25 +702,128 @@ def admin_reviewer_assignment():
     conn = get_db()
     if request.method == "POST":
         sub_id = request.form.get("submission_id")
-        rev_id = request.form.get("reviewer_id")
-        if sub_id and rev_id:
+        rev_id = request.form.get("reviewer_id") or None
+        if sub_id:
             conn.execute(
                 "UPDATE submissions SET reviewer_id=?, updated_at=datetime('now') WHERE id=?",
                 (rev_id, sub_id),
             )
             conn.commit()
-            flash("Reviewer assigned successfully.", "success")
-    submissions = conn.execute(
-        "SELECT s.*, u.full_name as reviewer_name FROM submissions s "
-        "LEFT JOIN users u ON s.reviewer_id = u.id ORDER BY s.status, s.submitted_at DESC"
-    ).fetchall()
-    reviewers = conn.execute(
-        "SELECT * FROM users WHERE role='reviewer' AND active=1"
-    ).fetchall()
+            if rev_id:
+                sub_row = conn.execute("SELECT document_title, kra_type FROM submissions WHERE id=?", (sub_id,)).fetchone()
+                rev_row = conn.execute("SELECT full_name FROM users WHERE id=?", (rev_id,)).fetchone()
+                if sub_row and rev_row:
+                    auto_notify(
+                        "Reviewer Assigned",
+                        f"{rev_row['full_name']} assigned to \"{sub_row['document_title']}\" ({sub_row['kra_type']}).",
+                        "info",
+                    )
+                log_action(g.user["id"], "Reviewer Assigned", f"Submission #{sub_id} → Reviewer #{rev_id}")
+                flash("Reviewer assigned successfully.", "success")
+            else:
+                log_action(g.user["id"], "Reviewer Unassigned", f"Submission #{sub_id} unassigned")
+                flash("Reviewer removed from submission.", "success")
+        return redirect(url_for("admin_reviewer_assignment"))
+
+    # Filters
+    q          = request.args.get("q", "").strip()
+    f_status   = request.args.get("status", "")
+    f_kra      = request.args.get("kra", "")
+    f_reviewer = request.args.get("reviewer", "")
+
+    sub_query = """
+        SELECT s.*, u.full_name AS reviewer_name, u.id AS reviewer_uid
+        FROM submissions s
+        LEFT JOIN users u ON s.reviewer_id = u.id
+        WHERE 1=1
+    """
+    params = []
+    if f_status:
+        sub_query += " AND s.status = ?"
+        params.append(f_status)
+    if f_kra:
+        sub_query += " AND s.kra_type = ?"
+        params.append(f_kra)
+    if f_reviewer:
+        sub_query += " AND s.reviewer_id = ?"
+        params.append(f_reviewer)
+    if q:
+        sub_query += " AND (s.faculty_name LIKE ? OR s.document_title LIKE ?)"
+        params.extend([f"%{q}%", f"%{q}%"])
+    sub_query += " ORDER BY u.full_name, s.faculty_name, s.submitted_at DESC"
+
+    all_subs = [dict(r) for r in conn.execute(sub_query, params).fetchall()]
+    reviewers = [dict(r) for r in conn.execute(
+        "SELECT * FROM users WHERE role='reviewer' AND active=1 ORDER BY full_name"
+    ).fetchall()]
+
+    # Build reviewer folders with faculty subfolders
+    reviewer_map = {}
+    for rev in reviewers:
+        reviewer_map[rev["id"]] = {
+            "reviewer": rev,
+            "faculty_groups": {},   # faculty_name -> {info, docs[]}
+            "pending": 0, "approved": 0, "rejected": 0, "under_review": 0,
+        }
+
+    unassigned = []
+    for s in all_subs:
+        rid = s.get("reviewer_id")
+        if rid and rid in reviewer_map:
+            fname = s["faculty_name"]
+            fg = reviewer_map[rid]["faculty_groups"]
+            if fname not in fg:
+                fg[fname] = {
+                    "faculty_name": fname,
+                    "faculty_email": s.get("faculty_email", ""),
+                    "docs": [],
+                    "pending": 0, "approved": 0, "rejected": 0,
+                }
+            fg[fname]["docs"].append(s)
+            status = s["status"]
+            if status in reviewer_map[rid]:
+                reviewer_map[rid][status] += 1
+            if status in fg[fname]:
+                fg[fname][status] += 1
+        else:
+            unassigned.append(s)
+
+    # Finalise folders — convert faculty_groups dict to sorted list
+    folders = []
+    for rid, data in reviewer_map.items():
+        groups = sorted(data["faculty_groups"].values(), key=lambda x: x["faculty_name"])
+        doc_count = sum(len(g["docs"]) for g in groups)
+        folders.append({
+            "reviewer": data["reviewer"],
+            "faculty_groups": groups,
+            "faculty_count": len(groups),
+            "doc_count": doc_count,
+            "pending": data["pending"],
+            "approved": data["approved"],
+            "rejected": data["rejected"],
+            "under_review": data["under_review"],
+        })
+    folders.sort(key=lambda x: (-x["pending"], -x["doc_count"]))
+
+    # Workload summary
+    total_assigned   = sum(f["doc_count"] for f in folders)
+    total_unassigned = len(unassigned)
+    total_pending    = sum(f["pending"] for f in folders)
+
+    kra_types = [r[0] for r in conn.execute(
+        "SELECT DISTINCT kra_type FROM submissions WHERE kra_type IS NOT NULL ORDER BY kra_type"
+    ).fetchall()]
+
     return render_template(
         "admin/reviewer_assignment.html",
-        submissions=[dict(s) for s in submissions],
-        reviewers=[dict(r) for r in reviewers],
+        folders=folders,
+        unassigned=unassigned,
+        reviewers=reviewers,
+        total_assigned=total_assigned,
+        total_unassigned=total_unassigned,
+        total_pending=total_pending,
+        kra_types=kra_types,
+        q=q, f_status=f_status, f_kra=f_kra, f_reviewer=f_reviewer,
     )
 
 
@@ -664,6 +903,19 @@ def reviewer_review(sub_id):
         )
         conn.commit()
         log_action(g.user["id"], f"Submission {status.title()}", f"Submission #{sub_id}: {comments[:80]}")
+        # Auto-notification for review outcome
+        if status == "approved":
+            auto_notify(
+                "Submission Approved",
+                f"\"{sub['document_title']}\" by {sub['faculty_name']} has been approved.",
+                "success",
+            )
+        else:
+            auto_notify(
+                "Submission Requires Revision",
+                f"\"{sub['document_title']}\" by {sub['faculty_name']} was rejected and requires revision.",
+                "warning",
+            )
         flash(f"Submission {status}.", "success")
         return redirect(url_for("reviewer_submissions"))
     rules = fetch_kra_rules(conn)

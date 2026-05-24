@@ -4,45 +4,518 @@
 {% set active_page = 'assignment' %}
 {% from 'macros.html' import status_badge %}
 
-{% block content %}
-<h1 class="page-title">Reviewer Assignment</h1>
-<p class="page-subtitle">Assign reviewers to faculty submissions for validation workflow</p>
+{% macro kra_slug(kra) %}{{ kra | lower | replace(' ', '-') | replace(',', '') | replace('/', '') | replace('&', '') }}{% endmacro %}
 
-<div class="card">
-  <div class="data-table-wrap">
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Faculty</th>
-          <th>Document</th>
-          <th>Status</th>
-          <th>Current Reviewer</th>
-          <th>Assign</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in submissions %}
-        <tr>
-          <td>{{ s.faculty_name }}</td>
-          <td>{{ s.document_title }}</td>
-          <td>{{ status_badge(s.status) }}</td>
-          <td>{{ s.reviewer_name or '—' }}</td>
-          <td>
-            <form method="POST" style="display:flex;gap:0.5rem;">
-              <input type="hidden" name="submission_id" value="{{ s.id }}">
-              <select name="reviewer_id" required>
-                <option value="">Select reviewer</option>
-                {% for r in reviewers %}
-                <option value="{{ r.id }}" {% if s.reviewer_id == r.id %}selected{% endif %}>{{ r.full_name }}</option>
-                {% endfor %}
-              </select>
-              <button type="submit" class="btn btn-sm btn-primary">Assign</button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+{% block content %}
+<div class="page-header-row">
+  <div>
+    <h1 class="page-title">Reviewer Assignment</h1>
+    <p class="page-subtitle">Reviewer folders · Faculty subfolders · Submitted documents</p>
+  </div>
+  <div style="display:flex;gap:0.5rem;align-items:center;">
+    <button type="button" class="btn btn-secondary btn-sm" id="raExpandAll">Expand All</button>
+    <button type="button" class="btn btn-secondary btn-sm" id="raCollapseAll">Collapse All</button>
   </div>
 </div>
+
+<!-- Workload summary -->
+<div class="ra-summary-row">
+  <div class="ra-summary-card">
+    <span class="ra-summary-num">{{ folders | length }}</span>
+    <span class="ra-summary-label">Active Reviewers</span>
+  </div>
+  <div class="ra-summary-card">
+    <span class="ra-summary-num">{{ folders | sum(attribute='faculty_count') }}</span>
+    <span class="ra-summary-label">Faculty Assigned</span>
+  </div>
+  <div class="ra-summary-card">
+    <span class="ra-summary-num">{{ total_assigned }}</span>
+    <span class="ra-summary-label">Total Documents</span>
+  </div>
+  <div class="ra-summary-card ra-summary-card--warn">
+    <span class="ra-summary-num">{{ total_pending }}</span>
+    <span class="ra-summary-label">Pending Reviews</span>
+  </div>
+  <div class="ra-summary-card">
+    <span class="ra-summary-num">{{ folders | sum(attribute='approved') }}</span>
+    <span class="ra-summary-label">Approved</span>
+  </div>
+  <div class="ra-summary-card {% if total_unassigned > 0 %}ra-summary-card--alert{% endif %}">
+    <span class="ra-summary-num">{{ total_unassigned }}</span>
+    <span class="ra-summary-label">Unassigned</span>
+  </div>
+</div>
+
+<!-- Search & Filter bar -->
+<form method="GET" class="ra-filter-bar" id="raFilterForm">
+  <div class="ra-search-wrap">
+    <svg class="ra-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    <input type="search" name="q" value="{{ q }}" placeholder="Search reviewer, faculty, or document…" class="ra-search-input" id="raSearchInput" autocomplete="off">
+  </div>
+  <select name="status" class="ra-filter-select">
+    <option value="">All Statuses</option>
+    <option value="pending"      {% if f_status=='pending' %}selected{% endif %}>Pending</option>
+    <option value="approved"     {% if f_status=='approved' %}selected{% endif %}>Approved</option>
+    <option value="rejected"     {% if f_status=='rejected' %}selected{% endif %}>Rejected</option>
+    <option value="under_review" {% if f_status=='under_review' %}selected{% endif %}>Under Review</option>
+  </select>
+  <select name="kra" class="ra-filter-select">
+    <option value="">All KRA Types</option>
+    {% for k in kra_types %}
+    <option value="{{ k }}" {% if f_kra==k %}selected{% endif %}>{{ k }}</option>
+    {% endfor %}
+  </select>
+  <select name="reviewer" class="ra-filter-select">
+    <option value="">All Reviewers</option>
+    {% for r in reviewers %}
+    <option value="{{ r.id }}" {% if f_reviewer==r.id|string %}selected{% endif %}>{{ r.full_name }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary btn-sm">Filter</button>
+  {% if q or f_status or f_kra or f_reviewer %}
+  <a href="{{ url_for('admin_reviewer_assignment') }}" class="btn btn-secondary btn-sm">Clear</a>
+  {% endif %}
+</form>
+
+<!-- ── Reviewer Folders ─────────────────────────────────────── -->
+{% if folders %}
+<div class="ra-folders" id="raFolders">
+  {% for folder in folders %}
+  {% set rev = folder.reviewer %}
+  <div class="ra-folder" id="folder-{{ rev.id }}"
+       data-reviewer="{{ rev.full_name | lower }}"
+       data-faculty="{{ folder.faculty_groups | map(attribute='faculty_name') | join(' ') | lower }}">
+
+    <!-- ── Reviewer folder header ── -->
+    <button type="button" class="ra-folder__header"
+            aria-expanded="true"
+            aria-controls="folder-body-{{ rev.id }}">
+      <div class="ra-folder__header-left">
+        <span class="ra-folder__icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+          </svg>
+        </span>
+        <div class="ra-folder__title-group">
+          <span class="ra-folder__name">{{ rev.full_name }}</span>
+          <span class="ra-folder__meta">
+            {{ folder.faculty_count }} faculty member{{ 's' if folder.faculty_count != 1 }}
+            &nbsp;·&nbsp;
+            {{ folder.doc_count }} document{{ 's' if folder.doc_count != 1 }}
+          </span>
+        </div>
+      </div>
+      <div class="ra-folder__header-right">
+        {% if folder.pending > 0 %}
+        <span class="ra-workload-badge ra-workload-badge--pending">{{ folder.pending }} pending</span>
+        {% endif %}
+        {% if folder.approved > 0 %}
+        <span class="ra-workload-badge ra-workload-badge--approved">{{ folder.approved }} approved</span>
+        {% endif %}
+        {% if folder.rejected > 0 %}
+        <span class="ra-workload-badge ra-workload-badge--rejected">{{ folder.rejected }} rejected</span>
+        {% endif %}
+        {% if folder.doc_count == 0 %}
+        <span class="ra-workload-badge ra-workload-badge--empty">No assignments</span>
+        {% endif %}
+        <span class="ra-folder__chevron" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </span>
+      </div>
+    </button>
+
+    <!-- ── Reviewer folder body ── -->
+    <div class="ra-folder__body" id="folder-body-{{ rev.id }}">
+
+      {% if folder.faculty_groups %}
+      <div class="ra-subfolder-list">
+        {% for fg in folder.faculty_groups %}
+        {% set sfid = 'sf-' ~ rev.id ~ '-' ~ loop.index %}
+
+        <!-- ── Faculty subfolder ── -->
+        <div class="ra-subfolder" data-faculty="{{ fg.faculty_name | lower }}">
+
+          <!-- Faculty header row -->
+          <div class="ra-subfolder__header-row">
+            <!-- Left: avatar + name/email + badges -->
+            <div class="ra-subfolder__info">
+              <span class="ra-faculty-avatar" aria-hidden="true">{{ fg.faculty_name[:1] }}</span>
+              <div class="ra-subfolder__title-group">
+                <span class="ra-subfolder__name">{{ fg.faculty_name }}</span>
+                {% if fg.faculty_email %}
+                <span class="ra-subfolder__email">{{ fg.faculty_email }}</span>
+                {% endif %}
+              </div>
+              <div class="ra-subfolder__badges">
+                <span class="ra-subfolder__doc-count">{{ fg.docs | length }} doc{{ 's' if fg.docs | length != 1 }}</span>
+                {% if fg.pending > 0 %}
+                <span class="ra-workload-badge ra-workload-badge--pending ra-workload-badge--sm">{{ fg.pending }} pending</span>
+                {% endif %}
+                {% if fg.approved > 0 %}
+                <span class="ra-workload-badge ra-workload-badge--approved ra-workload-badge--sm">{{ fg.approved }} approved</span>
+                {% endif %}
+                {% if fg.rejected > 0 %}
+                <span class="ra-workload-badge ra-workload-badge--rejected ra-workload-badge--sm">{{ fg.rejected }} rejected</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Right: Reassign + collapse toggle -->
+            <div class="ra-subfolder__controls">
+              <button type="button"
+                      class="btn btn-sm btn-secondary ra-sf-reassign-toggle"
+                      data-target="sfr-{{ rev.id }}-{{ loop.index }}"
+                      aria-expanded="false"
+                      aria-controls="sfr-{{ rev.id }}-{{ loop.index }}">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width:13px;height:13px;flex-shrink:0;"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                Reassign
+              </button>
+              <button type="button"
+                      class="ra-subfolder__toggle btn btn-sm btn-secondary"
+                      aria-expanded="true"
+                      aria-controls="{{ sfid }}"
+                      aria-label="Toggle documents">
+                <span class="ra-subfolder__chevron" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="width:16px;height:16px;display:block;">
+                    <polyline points="6 9 12 15 18 9"/>
+                  </svg>
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Reassign inline panel — expands in flow, never overlaps -->
+          <div class="ra-sf-reassign-panel" id="sfr-{{ rev.id }}-{{ loop.index }}" hidden>
+            <div class="ra-sf-reassign-inner">
+              <span class="ra-sf-reassign-label">
+                Move all documents for <strong>{{ fg.faculty_name }}</strong> to:
+              </span>
+              <div class="ra-sf-reassign-controls">
+                <select class="ra-reassign-select ra-sf-reviewer-select" aria-label="Select reviewer">
+                  <option value="">— Unassign —</option>
+                  {% for r in reviewers %}
+                  <option value="{{ r.id }}" {% if r.id == rev.id %}selected{% endif %}>{{ r.full_name }}</option>
+                  {% endfor %}
+                </select>
+                <button type="button"
+                        class="btn btn-sm btn-primary ra-sf-reassign-submit"
+                        data-sfid="sfr-{{ rev.id }}-{{ loop.index }}">
+                  Save
+                </button>
+                <button type="button"
+                        class="btn btn-sm btn-secondary ra-sf-reassign-cancel"
+                        data-target="sfr-{{ rev.id }}-{{ loop.index }}">
+                  Cancel
+                </button>
+              </div>
+              <!-- Hidden forms for each doc, filled by JS -->
+              {% for s in fg.docs %}
+              <form method="POST" class="ra-sf-reassign-form" style="display:none;">
+                <input type="hidden" name="submission_id" value="{{ s.id }}">
+                <input type="hidden" name="reviewer_id" value="">
+              </form>
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- Document list -->
+          <div class="ra-subfolder__body" id="{{ sfid }}">
+            {% for s in fg.docs %}
+            <div class="ra-doc-item" data-status="{{ s.status }}" data-kra="{{ s.kra_type or '' }}">
+              <span class="ra-doc-tree-line" aria-hidden="true"></span>
+              <span class="ra-doc-item__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                  <polyline points="14 2 14 8 20 8"/>
+                </svg>
+              </span>
+              <div class="ra-doc-item__info">
+                <span class="ra-doc-item__title">{{ s.document_title }}</span>
+                <div class="ra-doc-item__meta">
+                  {% if s.kra_type %}
+                  <span class="kra-tag kra-{{ kra_slug(s.kra_type) }}">{{ s.kra_type }}</span>
+                  {% endif %}
+                  <span class="ra-doc-item__date">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="width:11px;height:11px;vertical-align:middle;"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                    {{ s.submitted_at[:10] if s.submitted_at else '—' }}
+                  </span>
+                  {% if s.ocr_confidence %}
+                  <span class="ra-doc-item__ocr">OCR {{ s.ocr_confidence | round(0) | int }}%</span>
+                  {% endif %}
+                </div>
+              </div>
+              <div class="ra-doc-item__status">
+                {{ status_badge(s.status) }}
+              </div>
+            </div>
+            {% endfor %}
+          </div>
+          <!-- end subfolder body -->
+        </div>
+        <!-- end ra-subfolder -->
+        {% endfor %}
+      </div>
+      <!-- end subfolder list -->
+
+      {% else %}
+      <div class="ra-folder__empty">No documents assigned to this reviewer yet.</div>
+      {% endif %}
+
+      <!-- Assign new submission to this reviewer -->
+      <div class="ra-folder__assign-panel">
+        <details class="ra-assign-details">
+          <summary class="ra-assign-summary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Assign a submission to {{ rev.full_name }}
+          </summary>
+          <form method="POST" class="ra-assign-form">
+            <select name="submission_id" required class="ra-assign-select">
+              <option value="">Select submission…</option>
+              {% if unassigned %}
+              <optgroup label="── Unassigned ──">
+                {% for s in unassigned %}
+                <option value="{{ s.id }}">{{ s.faculty_name }} — {{ s.document_title }} ({{ s.kra_type or 'N/A' }})</option>
+                {% endfor %}
+              </optgroup>
+              {% endif %}
+              {% for f2 in folders %}{% if f2.reviewer.id != rev.id and f2.faculty_groups %}
+              <optgroup label="── From {{ f2.reviewer.full_name }} ──">
+                {% for fg2 in f2.faculty_groups %}{% for s in fg2.docs %}
+                <option value="{{ s.id }}">{{ s.faculty_name }} — {{ s.document_title }}</option>
+                {% endfor %}{% endfor %}
+              </optgroup>
+              {% endif %}{% endfor %}
+            </select>
+            <input type="hidden" name="reviewer_id" value="{{ rev.id }}">
+            <button type="submit" class="btn btn-sm btn-primary">Assign</button>
+          </form>
+        </details>
+      </div>
+
+    </div>
+    <!-- end folder body -->
+  </div>
+  <!-- end ra-folder -->
+  {% endfor %}
+</div>
+
+{% else %}
+<div class="ra-empty-state">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+  </svg>
+  <p>No reviewer folders found{% if q or f_status or f_kra %} matching your filters{% endif %}.</p>
+  {% if q or f_status or f_kra %}
+  <a href="{{ url_for('admin_reviewer_assignment') }}" class="btn btn-secondary btn-sm">Clear filters</a>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ── Unassigned Submissions ──────────────────────────────── -->
+{% if unassigned %}
+<div class="ra-unassigned-section" id="raUnassigned">
+  <button type="button" class="ra-folder__header ra-unassigned-header"
+          aria-expanded="true"
+          aria-controls="ra-unassigned-body">
+    <div class="ra-folder__header-left">
+      <span class="ra-folder__icon ra-folder__icon--alert" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <line x1="12" y1="8" x2="12" y2="12"/>
+          <line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+      </span>
+      <div class="ra-folder__title-group">
+        <span class="ra-folder__name">Unassigned Submissions</span>
+        <span class="ra-folder__meta">{{ unassigned | length }} document{{ 's' if unassigned | length != 1 }} awaiting assignment</span>
+      </div>
+    </div>
+    <div class="ra-folder__header-right">
+      <span class="ra-workload-badge ra-workload-badge--alert">{{ unassigned | length }} unassigned</span>
+      <span class="ra-folder__chevron" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </span>
+    </div>
+  </button>
+
+  <div class="ra-folder__body" id="ra-unassigned-body">
+    {% for s in unassigned %}
+    <div class="ra-doc-item ra-doc-item--unassigned" data-status="{{ s.status }}" data-kra="{{ s.kra_type or '' }}">
+      <span class="ra-doc-item__icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+        </svg>
+      </span>
+      <div class="ra-doc-item__info">
+        <span class="ra-doc-item__faculty-label">{{ s.faculty_name }}</span>
+        <span class="ra-doc-item__title">{{ s.document_title }}</span>
+        <div class="ra-doc-item__meta">
+          {% if s.kra_type %}
+          <span class="kra-tag kra-{{ kra_slug(s.kra_type) }}">{{ s.kra_type }}</span>
+          {% endif %}
+          <span class="ra-doc-item__date">{{ s.submitted_at[:10] if s.submitted_at else '—' }}</span>
+        </div>
+      </div>
+      <div class="ra-doc-item__status">{{ status_badge(s.status) }}</div>
+      <div class="ra-doc-item__actions">
+        <form method="POST" class="ra-reassign-form">
+          <input type="hidden" name="submission_id" value="{{ s.id }}">
+          <select name="reviewer_id" class="ra-reassign-select" required aria-label="Assign reviewer">
+            <option value="">Select reviewer…</option>
+            {% for r in reviewers %}
+            <option value="{{ r.id }}">{{ r.full_name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-sm btn-primary">Assign</button>
+        </form>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+
+  // ── Generic accordion toggle ──────────────────────────────
+  function toggleAccordion(btn) {
+    const expanded = btn.getAttribute('aria-expanded') === 'true';
+    const bodyId   = btn.getAttribute('aria-controls');
+    const body     = document.getElementById(bodyId);
+    btn.setAttribute('aria-expanded', String(!expanded));
+    if (body) body.classList.toggle('ra-collapsed', expanded);
+    btn.classList.toggle('ra-hdr-collapsed', expanded);
+  }
+
+  // Reviewer-level folder headers
+  document.querySelectorAll('.ra-folder__header').forEach(btn => {
+    btn.addEventListener('click', () => toggleAccordion(btn));
+  });
+  // Faculty subfolder toggle buttons (separate from reassign)
+  document.querySelectorAll('.ra-subfolder__toggle').forEach(btn => {
+    btn.addEventListener('click', () => toggleAccordion(btn));
+  });
+
+  // ── Expand / Collapse All ─────────────────────────────────
+  function setAll(expand) {
+    // Reviewer folders
+    document.querySelectorAll('.ra-folder__header').forEach(btn => {
+      const body = document.getElementById(btn.getAttribute('aria-controls'));
+      btn.setAttribute('aria-expanded', String(expand));
+      btn.classList.toggle('ra-hdr-collapsed', !expand);
+      if (body) body.classList.toggle('ra-collapsed', !expand);
+    });
+    // Faculty subfolder toggles
+    document.querySelectorAll('.ra-subfolder__toggle').forEach(btn => {
+      const body = document.getElementById(btn.getAttribute('aria-controls'));
+      btn.setAttribute('aria-expanded', String(expand));
+      btn.classList.toggle('ra-hdr-collapsed', !expand);
+      if (body) body.classList.toggle('ra-collapsed', !expand);
+    });
+  }
+
+  const expandBtn   = document.getElementById('raExpandAll');
+  const collapseBtn = document.getElementById('raCollapseAll');
+  if (expandBtn)   expandBtn.addEventListener('click',   () => setAll(true));
+  if (collapseBtn) collapseBtn.addEventListener('click', () => setAll(false));
+
+  // ── Faculty-level Reassign panel toggle ──────────────────
+  document.querySelectorAll('.ra-sf-reassign-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const panelId = btn.dataset.target;
+      const panel   = document.getElementById(panelId);
+      if (!panel) return;
+      const isOpen = !panel.hidden;
+      // Close all other reassign panels first
+      document.querySelectorAll('.ra-sf-reassign-panel').forEach(p => { p.hidden = true; });
+      document.querySelectorAll('.ra-sf-reassign-toggle').forEach(b => b.setAttribute('aria-expanded', 'false'));
+      if (!isOpen) {
+        panel.hidden = false;
+        btn.setAttribute('aria-expanded', 'true');
+      }
+    });
+  });
+
+  // Cancel button closes the panel
+  document.querySelectorAll('.ra-sf-reassign-cancel').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const panel = document.getElementById(btn.dataset.target);
+      if (panel) panel.hidden = true;
+      // Reset the matching toggle button
+      document.querySelectorAll('.ra-sf-reassign-toggle').forEach(b => {
+        if (b.dataset.target === btn.dataset.target) b.setAttribute('aria-expanded', 'false');
+      });
+    });
+  });
+
+  // Submit all docs in a faculty group to the chosen reviewer
+  document.querySelectorAll('.ra-sf-reassign-submit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const panelId = btn.dataset.sfid;
+      const panel   = document.getElementById(panelId);
+      if (!panel) return;
+      const select   = panel.querySelector('.ra-sf-reviewer-select');
+      const newRevId = select ? select.value : '';
+      const forms    = panel.querySelectorAll('.ra-sf-reassign-form');
+      if (!forms.length) return;
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      const submissions = [...forms].map(f => f.querySelector('input[name="submission_id"]').value);
+      Promise.all(submissions.map(subId => {
+        const fd = new FormData();
+        fd.append('submission_id', subId);
+        fd.append('reviewer_id', newRevId);
+        return fetch(window.location.pathname, { method: 'POST', body: fd });
+      })).then(() => window.location.reload());
+    });
+  });
+
+  // ── Live search ───────────────────────────────────────────
+  const searchInput = document.getElementById('raSearchInput');
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      const term = searchInput.value.toLowerCase().trim();
+
+      document.querySelectorAll('.ra-folder').forEach(folder => {
+        const revName     = (folder.dataset.reviewer || '');
+        const facultyText = (folder.dataset.faculty  || '');
+        const revMatch    = !term || revName.includes(term) || facultyText.includes(term);
+
+        let anySubVisible = false;
+
+        folder.querySelectorAll('.ra-subfolder').forEach(sf => {
+          const sfName  = (sf.dataset.faculty || '');
+          const sfMatch = !term || sfName.includes(term) || revName.includes(term);
+          let anyDocVisible = false;
+
+          sf.querySelectorAll('.ra-doc-item').forEach(doc => {
+            const docText = doc.textContent.toLowerCase();
+            const show    = !term || docText.includes(term) || sfMatch;
+            doc.style.display = show ? '' : 'none';
+            if (show) anyDocVisible = true;
+          });
+
+          const showSf = sfMatch || anyDocVisible;
+          sf.style.display = showSf ? '' : 'none';
+          if (showSf) anySubVisible = true;
+        });
+
+        folder.style.display = (revMatch || anySubVisible) ? '' : 'none';
+      });
+    });
+  }
+
+})();
+</script>
 {% endblock %}
